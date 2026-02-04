@@ -1,0 +1,176 @@
+# Hetzner Cloud Cluster Autoscaler
+# Scales workers 0-5 across nbg1, hel1 (cx33 not available in fsn1)
+#
+# Before applying, create the autoscaler secret with your cloud-init template.
+# See instructions at the bottom of this file.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cluster-autoscaler
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cluster-autoscaler
+  namespace: cluster-autoscaler
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cluster-autoscaler
+rules:
+  - apiGroups: [""]
+    resources: ["events", "endpoints"]
+    verbs: ["create", "patch"]
+  - apiGroups: [""]
+    resources: ["pods/eviction"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["pods/status"]
+    verbs: ["update"]
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    resourceNames: ["cluster-autoscaler"]
+    verbs: ["get", "update"]
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["watch", "list", "get", "update"]
+  - apiGroups: [""]
+    resources: ["namespaces", "pods", "services", "replicationcontrollers", "persistentvolumeclaims", "persistentvolumes"]
+    verbs: ["watch", "list", "get"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["watch", "list", "get"]
+  - apiGroups: ["extensions", "apps"]
+    resources: ["daemonsets", "replicasets", "statefulsets"]
+    verbs: ["watch", "list", "get"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["watch", "list"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses", "csinodes", "csidrivers", "csistoragecapacities"]
+    verbs: ["watch", "list", "get"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["create"]
+  - apiGroups: ["coordination.k8s.io"]
+    resourceNames: ["cluster-autoscaler"]
+    resources: ["leases"]
+    verbs: ["get", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cluster-autoscaler
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-autoscaler
+subjects:
+  - kind: ServiceAccount
+    name: cluster-autoscaler
+    namespace: cluster-autoscaler
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-autoscaler
+  namespace: cluster-autoscaler
+  labels:
+    app: cluster-autoscaler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cluster-autoscaler
+  template:
+    metadata:
+      labels:
+        app: cluster-autoscaler
+    spec:
+      serviceAccountName: cluster-autoscaler
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          effect: NoSchedule
+      containers:
+        - name: cluster-autoscaler
+          image: registry.k8s.io/autoscaling/cluster-autoscaler:v1.29.0
+          command:
+            - ./cluster-autoscaler
+            - --cloud-provider=hetzner
+            - --namespace=cluster-autoscaler
+            - --nodes=0:5:CX33:NBG1:workers-nbg1
+            - --nodes=0:5:CX33:HEL1:workers-hel1
+            - --scale-down-enabled=true
+            - --scale-down-delay-after-add=5m
+            - --scale-down-unneeded-time=5m
+            - --scale-down-utilization-threshold=0.5
+            - --skip-nodes-with-local-storage=false
+            - --skip-nodes-with-system-pods=false
+            - --balance-similar-node-groups=true
+            - --expander=least-waste
+            - --v=4
+          env:
+            - name: HCLOUD_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hcloud-autoscaler
+                  key: token
+            - name: HCLOUD_CLOUD_INIT
+              valueFrom:
+                secretKeyRef:
+                  name: hcloud-autoscaler
+                  key: cloud-init
+            - name: HCLOUD_IMAGE
+              value: "ubuntu-24.04"
+            - name: HCLOUD_NETWORK
+              valueFrom:
+                secretKeyRef:
+                  name: hcloud-autoscaler
+                  key: network
+            - name: HCLOUD_SSH_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: hcloud-autoscaler
+                  key: ssh-key
+            - name: HCLOUD_FIREWALL
+              valueFrom:
+                secretKeyRef:
+                  name: hcloud-autoscaler
+                  key: firewall
+          resources:
+            requests:
+              cpu: 100m
+              memory: 300Mi
+            limits:
+              cpu: 500m
+              memory: 500Mi
+---
+# =============================================================================
+# INSTRUCTIONS: Create the autoscaler secret
+# =============================================================================
+#
+# After terraform apply, run these commands to create the secret:
+#
+# 1. Get the values from terraform output:
+#    terraform output autoscaler_config
+#
+# 2. Create the cloud-init template for workers (base64 encoded):
+#    CLOUD_INIT=$(cat cloud-init-agent.yaml.tpl | base64 -w0)
+#
+# 3. Create the secret:
+#    kubectl create secret generic hcloud-autoscaler \
+#      --namespace=cluster-autoscaler \
+#      --from-literal=token="YOUR_HCLOUD_TOKEN" \
+#      --from-literal=cloud-init="$CLOUD_INIT" \
+#      --from-literal=network="hetzner-k8s-network" \
+#      --from-literal=ssh-key="hetzner-k8s-key" \
+#      --from-literal=firewall="hetzner-k8s-fw"
+#
+# Note: The cloud-init template must be a valid template that the autoscaler
+# will use when creating new nodes. It should be the rendered version of
+# cloud-init-agent.yaml.tpl with the actual values filled in.
+#
+# Alternative: Use the scripts/setup-autoscaler.sh script to automate this.
+# =============================================================================

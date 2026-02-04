@@ -1,3 +1,49 @@
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+*.tfvars
+!terraform.tfvars.example
+
+# Environment / Secrets
 .env
-.idea
-.claude
+.env.*
+*.pem
+*.key
+
+# SSH keys (in project directory)
+hetzner-k8s
+hetzner-k8s.pub
+
+# Kubeconfig
+kubeconfig
+*.kubeconfig
+kubeconfig.yaml
+hetzner-k8s.yaml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+.claude/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
+temp/

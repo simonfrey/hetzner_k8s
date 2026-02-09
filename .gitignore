@@ -19,10 +19,6 @@ override.tf.json
 *.pem
 *.key
 
-# SSH keys (in project directory)
-hetzner-k8s
-hetzner-k8s.pub
-
 # Kubeconfig
 kubeconfig
 *.kubeconfig
@@ -46,6 +42,14 @@ Thumbs.db
 
 # WireProxy (userspace WireGuard tunnel)
 .wireproxy.*
+
+# Packer
+packer/.packer.d/
+packer/packer_cache/
+
+# Talos
+talosconfig
+*.talosconfig
 
 # Temporary files
 tmp/

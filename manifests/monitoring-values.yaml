@@ -1,5 +1,5 @@
 # Helm values for kube-prometheus-stack
-# Tuned for small Hetzner k3s clusters
+# Tuned for small Hetzner Talos clusters
 #
 # Install with:
 #   helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
@@ -34,7 +34,6 @@ prometheus:
 # Grafana configuration
 grafana:
   enabled: true
-  adminPassword: admin  # Change in production!
   persistence:
     enabled: true
     storageClassName: hcloud-volumes
@@ -53,17 +52,7 @@ grafana:
   defaultDashboardsEnabled: true
   defaultDashboardsTimezone: utc
   ingress:
-    enabled: true
-    ingressClassName: traefik
-    annotations:
-      cert-manager.io/cluster-issuer: letsencrypt-prod
-      traefik.ingress.kubernetes.io/router.middlewares: monitoring-redirect-https@kubernetescrd
-    hosts:
-      - grafana.k8s.simon-frey.com
-    tls:
-      - secretName: grafana-tls
-        hosts:
-          - grafana.k8s.simon-frey.com
+    enabled: false
 
 # Alertmanager configuration
 alertmanager:
@@ -106,12 +95,12 @@ prometheusOperator:
       operator: Exists
       effect: NoSchedule
 
-# Disable components not needed for k3s
+# Disable components not easily scrapeable on Talos
 kubeEtcd:
-  enabled: false  # k3s uses embedded etcd
+  enabled: false  # Talos etcd requires mTLS for metrics
 kubeScheduler:
-  enabled: false  # k3s integrated
+  enabled: false  # Talos binds to localhost
 kubeControllerManager:
-  enabled: false  # k3s integrated
+  enabled: false  # Talos binds to localhost
 kubeProxy:
-  enabled: false  # k3s uses kube-proxy but exposes different metrics
+  enabled: false  # Cilium replaces kube-proxy

@@ -35,10 +35,9 @@ variable "server_type" {
 
   validation {
     condition = contains([
-      "cx23", "cx42", "cx52",                       # Shared vCPU (Intel)
+      "cx23", "cx42", "cx52",                               # Shared vCPU (Intel)
       "cpx11", "cpx21", "cpx31", "cpx41", "cpx51",          # Shared vCPU (AMD)
       "ccx13", "ccx23", "ccx23", "ccx43", "ccx53", "ccx63", # Dedicated vCPU
-      "cx23"                                                # Legacy type for backwards compatibility
     ], var.server_type)
     error_message = "server_type must be a valid Hetzner Cloud server type."
   }
@@ -47,7 +46,7 @@ variable "server_type" {
 variable "control_plane_location" {
   description = "Location for control plane node"
   type        = string
-  default     = "nbg1" # fsn1 often at capacity, nbg1 more reliable
+  default     = "nbg1"
 }
 
 variable "worker_locations" {
@@ -63,39 +62,63 @@ variable "network_zone" {
 }
 
 # ============================================================================
-# SSH Configuration
+# Talos Configuration
 # ============================================================================
 
-variable "ssh_public_key_path" {
-  description = "Path to SSH public key for node access"
+variable "talos_version" {
+  description = "Talos Linux version (must match the Packer-built image)"
   type        = string
-  default     = "~/.ssh/hetzner-k8s.pub"
+  default     = "v1.9.5"
 }
 
 # ============================================================================
-# Wireguard VPN Configuration
+# WireGuard VPN Configuration
 # ============================================================================
 
-variable "wireguard_client_public_key" {
-  description = "Public key of the Wireguard client that will access the K8s API. Generate with: wg genkey | tee privatekey | wg pubkey > publickey"
+variable "wireguard_server_private_key" {
+  description = "WireGuard server private key. Generate with: wg genkey"
   type        = string
-  default     = ""
+  sensitive   = true
 
   validation {
-    condition     = var.wireguard_client_public_key == "" || can(regex("^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$", var.wireguard_client_public_key))
+    condition     = can(regex("^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$", var.wireguard_server_private_key))
+    error_message = "wireguard_server_private_key must be a valid WireGuard private key (44 chars, base64)."
+  }
+}
+
+variable "wireguard_server_public_key" {
+  description = "WireGuard server public key (derived from server private key). Generate with: echo '<private_key>' | wg pubkey"
+  type        = string
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$", var.wireguard_server_public_key))
+    error_message = "wireguard_server_public_key must be a valid WireGuard public key (44 chars, base64)."
+  }
+}
+
+variable "wireguard_client_public_key" {
+  description = "Public key of the WireGuard client that will access the K8s API. Generate with: wg genkey | tee privatekey | wg pubkey > publickey"
+  type        = string
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$", var.wireguard_client_public_key))
     error_message = "wireguard_client_public_key must be a valid WireGuard public key (44 chars, base64)."
   }
 }
 
 variable "wireguard_client_private_key" {
-  description = "Private key of the WireGuard client. Required when enable_wireguard=true for automated tunnel setup. Generate with: wg genkey"
+  description = "Private key of the WireGuard client. Required for automated tunnel setup. Generate with: wg genkey"
   type        = string
-  default     = ""
   sensitive   = true
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$", var.wireguard_client_private_key))
+    error_message = "wireguard_client_private_key must be a valid WireGuard private key (44 chars, base64)."
+  }
 }
 
 variable "wireguard_client_ip" {
-  description = "IP address to assign to the Wireguard client within the VPN subnet"
+  description = "IP address to assign to the WireGuard client within the VPN subnet"
   type        = string
   default     = "10.200.200.2"
 
@@ -103,16 +126,6 @@ variable "wireguard_client_ip" {
     condition     = can(cidrhost("10.200.200.0/24", tonumber(split(".", var.wireguard_client_ip)[3])))
     error_message = "wireguard_client_ip must be within 10.200.200.0/24 subnet."
   }
-}
-
-# ============================================================================
-# K3s Configuration
-# ============================================================================
-
-variable "k3s_channel" {
-  description = "K3s release channel (stable, latest, or specific version)"
-  type        = string
-  default     = "stable"
 }
 
 # ============================================================================
@@ -149,14 +162,4 @@ variable "initial_worker_count" {
   description = "Number of workers to create initially (0 if using autoscaler)"
   type        = number
   default     = 0
-}
-
-# ============================================================================
-# Feature Flags
-# ============================================================================
-
-variable "enable_wireguard" {
-  description = "Enable Wireguard VPN for secure K8s API access (requires wireguard_client_public_key)"
-  type        = bool
-  default     = true
 }

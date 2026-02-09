@@ -6,10 +6,10 @@
 #   kubectl create secret generic hcloud-autoscaler \
 #     --namespace=cluster-autoscaler \
 #     --from-literal=token="YOUR_HCLOUD_TOKEN" \
-#     --from-literal=cloud-init="$(terraform output -raw worker_cloud_init_base64)" \
+#     --from-literal=cloud-init="$(terraform output -raw worker_machine_config_base64)" \
 #     --from-literal=network="hetzner-k8s-network" \
-#     --from-literal=ssh-key="hetzner-k8s-key" \
-#     --from-literal=firewall="hetzner-k8s-fw"
+#     --from-literal=firewall="hetzner-k8s-fw" \
+#     --from-literal=image="$(terraform output -raw talos_image_id)"
 ---
 apiVersion: v1
 kind: Namespace
@@ -180,17 +180,15 @@ spec:
                   name: hcloud-autoscaler
                   key: cloud-init
             - name: HCLOUD_IMAGE
-              value: "ubuntu-24.04"
+              valueFrom:
+                secretKeyRef:
+                  name: hcloud-autoscaler
+                  key: image
             - name: HCLOUD_NETWORK
               valueFrom:
                 secretKeyRef:
                   name: hcloud-autoscaler
                   key: network
-            - name: HCLOUD_SSH_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: hcloud-autoscaler
-                  key: ssh-key
             - name: HCLOUD_FIREWALL
               valueFrom:
                 secretKeyRef:

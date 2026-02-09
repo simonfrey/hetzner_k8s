@@ -23,21 +23,12 @@ output "worker_public_ips" {
 }
 
 # ============================================================================
-# SSH Commands
-# ============================================================================
-
-output "ssh_command" {
-  description = "SSH into control plane"
-  value       = "ssh -i ~/.ssh/hetzner-k8s root@${hcloud_server.control_plane.ipv4_address}"
-}
-
-# ============================================================================
-# Kubeconfig
+# Kubeconfig (from Talos provider)
 # ============================================================================
 
 output "kubeconfig" {
   description = "Kubeconfig for cluster access (save to ~/.kube/hetzner-k8s.yaml)"
-  value       = data.external.kubeconfig.result.kubeconfig
+  value       = talos_cluster_kubeconfig.this.kubeconfig_raw
   sensitive   = true
 }
 
@@ -55,54 +46,13 @@ output "kubeconfig_command" {
 }
 
 # ============================================================================
-# Wireguard VPN Configuration
+# Talos Configuration
 # ============================================================================
 
-output "wireguard_client_config" {
-  description = "Wireguard client configuration (save to /etc/wireguard/hetzner-k8s.conf)"
+output "talosconfig" {
+  description = "Talos client configuration for talosctl"
+  value       = data.talos_client_configuration.this.talos_config
   sensitive   = true
-  value = var.enable_wireguard && var.wireguard_client_public_key != "" ? join("\n", [
-    "[Interface]",
-    "# Replace YOUR_PRIVATE_KEY with your client's private key",
-    "PrivateKey = YOUR_PRIVATE_KEY",
-    "Address = ${var.wireguard_client_ip}/32",
-    "DNS = 10.0.1.1",
-    "",
-    "[Peer]",
-    "PublicKey = ${data.external.wireguard_server_pubkey[0].result.pubkey}",
-    "Endpoint = ${hcloud_server.control_plane.ipv4_address}:51820",
-    "AllowedIPs = 10.200.200.1/32, 10.0.0.0/16",
-    "PersistentKeepalive = 25"
-  ]) : "Wireguard not enabled or client public key not provided"
-}
-
-output "wireguard_setup_instructions" {
-  description = "Instructions for setting up Wireguard VPN access"
-  value = var.enable_wireguard ? join("\n", [
-    "",
-    "=== Wireguard VPN Setup ===",
-    "",
-    "1. Generate client keys (if not already done):",
-    "   wg genkey | tee ~/.wireguard/hetzner-k8s-private | wg pubkey > ~/.wireguard/hetzner-k8s-public",
-    "",
-    "2. Re-run terraform with your public key:",
-    "   export TF_VAR_wireguard_client_public_key=\"$(cat ~/.wireguard/hetzner-k8s-public)\"",
-    "   terraform apply",
-    "",
-    "3. Save the client config:",
-    "   terraform output -raw wireguard_client_config > /etc/wireguard/hetzner-k8s.conf",
-    "   # Edit the file and replace YOUR_PRIVATE_KEY with: $(cat ~/.wireguard/hetzner-k8s-private)",
-    "",
-    "4. Connect:",
-    "   sudo wg-quick up hetzner-k8s",
-    "",
-    "5. Test connection:",
-    "   ping 10.200.200.1",
-    "   kubectl get nodes",
-    "",
-    "NOTE: The K8s API (port 6443) is only accessible via Wireguard VPN!",
-    ""
-  ]) : "Wireguard not enabled"
 }
 
 # ============================================================================
@@ -129,24 +79,8 @@ output "dns_instructions" {
 }
 
 # ============================================================================
-# Autoscaler Configuration (for cluster-autoscaler.yaml)
+# Autoscaler Configuration
 # ============================================================================
-
-output "autoscaler_config" {
-  description = "Values needed for cluster-autoscaler manifest"
-  value       = <<-EOT
-
-    Network ID: ${hcloud_network.cluster.id}
-    SSH Key ID: ${hcloud_ssh_key.default.id}
-    Firewall ID: ${hcloud_firewall.cluster.id}
-
-    Worker locations: ${join(", ", var.worker_locations)}
-    Server type: ${var.server_type}
-    Min nodes: ${var.autoscaler_min_nodes}
-    Max nodes: ${var.autoscaler_max_nodes}
-
-  EOT
-}
 
 output "cluster_name" {
   description = "Name of the cluster (used for resource naming)"
@@ -159,10 +93,15 @@ output "hcloud_token" {
   sensitive   = true
 }
 
-output "worker_cloud_init_base64" {
-  description = "Base64-encoded cloud-init for autoscaler"
-  value       = base64encode(local.agent_cloud_init)
+output "worker_machine_config_base64" {
+  description = "Base64-encoded Talos worker machine config for autoscaler"
+  value       = base64encode(data.talos_machine_configuration.worker.machine_configuration)
   sensitive   = true
+}
+
+output "talos_image_id" {
+  description = "Hetzner snapshot ID of the Talos image"
+  value       = data.hcloud_image.talos.id
 }
 
 # ============================================================================
@@ -173,13 +112,13 @@ output "summary" {
   description = "Deployment summary"
   value       = <<-EOT
 
-    Hetzner K8s Cluster Deployed!
-    =============================
+    Hetzner K8s Cluster (Talos Linux) Deployed!
+    =============================================
 
     Control Plane: ${hcloud_server.control_plane.ipv4_address} (${var.control_plane_location})
     Load Balancer: ${hcloud_load_balancer.ingress.ipv4}
     Initial Workers: ${var.initial_worker_count}
-    Wireguard VPN: ${var.enable_wireguard ? "Enabled (port 51820)" : "Disabled"}
+    Talos Version: ${var.talos_version}
 
     Next Steps:
     1. Run: ./scripts/post-deploy.sh
@@ -187,9 +126,9 @@ output "summary" {
     3. Deploy test app: kubectl apply -f manifests/example-app.yaml
 
     Security Notes:
-    - K8s API (6443) is ${var.enable_wireguard ? "accessible only via Wireguard VPN" : "publicly accessible (consider enabling Wireguard)"}
-    - etcd encryption at rest: Enabled
-    - kubeconfig permissions: 600 (owner only)
+    - K8s API (6443) accessible only via WireGuard VPN
+    - Talos API (50000) accessible only via WireGuard VPN
+    - No SSH — manage via talosctl through WireGuard tunnel
 
   EOT
 }

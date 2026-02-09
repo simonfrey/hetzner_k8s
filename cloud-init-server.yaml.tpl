@@ -6,6 +6,9 @@ packages:
   - open-iscsi   # Required for Hetzner CSI
   - nfs-common   # Required for some CSI drivers
   - jq
+%{ if enable_wireguard ~}
+  - wireguard-tools
+%{ endif ~}
 
 # Add the worker-fetch SSH public key so workers can grab the join token
 ssh_authorized_keys:
@@ -70,7 +73,23 @@ write_files:
           storageClasses:
             - name: hcloud-volumes
               defaultStorageClass: true
-              reclaimPolicy: Delete
+              reclaimPolicy: Retain
+
+  # etcd encryption configuration
+  - path: /var/lib/rancher/k3s/server/encryption-config.yaml
+    permissions: "0600"
+    content: |
+      apiVersion: apiserver.config.k8s.io/v1
+      kind: EncryptionConfiguration
+      resources:
+        - resources:
+            - secrets
+          providers:
+            - aescbc:
+                keys:
+                  - name: key1
+                    secret: ${etcd_encryption_key}
+            - identity: {}
 
 runcmd:
   # Wait for private network and detect interface
@@ -92,32 +111,78 @@ runcmd:
   # Get public and private IPs
   - |
     PUBLIC_IP=$(curl -s http://169.254.169.254/hetzner/v1/metadata/public-ipv4)
-    PRIVATE_IP=$(ip -4 addr show $PRIVATE_IFACE | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
+    PRIVATE_IP=$(ip -4 addr show "$PRIVATE_IFACE" | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
     echo "Public IP: $PUBLIC_IP"
     echo "Private IP: $PRIVATE_IP"
 
-  # Install k3s server (control plane runs workloads - no taint)
+%{ if enable_wireguard ~}
+  # Enable IP forwarding for Wireguard
+  - |
+    echo "Enabling IP forwarding..."
+    echo 'net.ipv4.ip_forward = 1' >> /etc/sysctl.conf
+    sysctl -p
+
+  # Generate Wireguard config
+  - |
+    cat > /etc/wireguard/wg0.conf << 'WGEOF'
+    [Interface]
+    Address = 10.200.200.1/24
+    ListenPort = 51820
+    PrivateKey = ${wireguard_server_privkey}
+    PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+    PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+
+%{ if wireguard_client_pubkey != "" ~}
+    [Peer]
+    PublicKey = ${wireguard_client_pubkey}
+    AllowedIPs = ${wireguard_client_ip}/32
+%{ endif ~}
+    WGEOF
+    chmod 600 /etc/wireguard/wg0.conf
+    echo "${wireguard_server_privkey}" | wg pubkey > /etc/wireguard/server.pub
+
+  # Start Wireguard
+  - |
+    echo "Starting Wireguard..."
+    systemctl enable wg-quick@wg0
+    systemctl start wg-quick@wg0
+    wg show
+%{ endif ~}
+
+  # Install k3s server (control plane runs workloads - no taint initially)
   # NOTE: We intentionally omit --kubelet-arg="cloud-provider=external" on the control plane.
   # This prevents the node.cloudprovider.kubernetes.io/uninitialized taint that would block
   # the CCM helm-install job from scheduling, creating a deadlock where CCM can't install
   # to remove the taint. Workers still use external cloud provider for proper CCM integration.
   - |
-    curl -sfL https://get.k3s.io | INSTALL_K3S_CHANNEL="${k3s_channel}" sh -s - server \
+    if ! curl -sfL https://get.k3s.io | INSTALL_K3S_CHANNEL="${k3s_channel}" sh -s - server \
       --disable-cloud-controller \
-      --flannel-iface=$PRIVATE_IFACE \
-      --node-ip=$PRIVATE_IP \
-      --advertise-address=$PRIVATE_IP \
-      --tls-san=$PUBLIC_IP \
-      --tls-san=$PRIVATE_IP \
-      --write-kubeconfig-mode=644
+      --flannel-iface="$PRIVATE_IFACE" \
+      --node-ip="$PRIVATE_IP" \
+      --advertise-address="$PRIVATE_IP" \
+      --tls-san="$PUBLIC_IP" \
+      --tls-san="$PRIVATE_IP" \
+      --tls-san="10.200.200.1" \
+      --write-kubeconfig-mode=600 \
+      --secrets-encryption; then
+      echo "ERROR: k3s installation failed" >&2
+      exit 1
+    fi
 
   # Wait for k3s to be ready
   - |
     echo "Waiting for k3s to start..."
+    TIMEOUT=300; ELAPSED=0
     until kubectl get nodes --kubeconfig /etc/rancher/k3s/k3s.yaml 2>/dev/null; do
-      sleep 3
+      sleep 3; ELAPSED=$((ELAPSED+3))
+      if [ $ELAPSED -ge $TIMEOUT ]; then echo "TIMEOUT waiting for k3s in cloud-init" >&2; exit 1; fi
     done
     echo "k3s control plane is ready"
+
+  # Taint control plane node (workloads should run on workers when available)
+  - |
+    echo "Tainting control plane node..."
+    kubectl taint nodes "$(hostname)" node-role.kubernetes.io/control-plane=:NoSchedule --kubeconfig /etc/rancher/k3s/k3s.yaml --overwrite || true
 
   # Signal readiness (token is now available for workers)
   - echo "CONTROL_PLANE_READY" > /tmp/cp-ready

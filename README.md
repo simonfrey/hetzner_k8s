@@ -1,6 +1,6 @@
 # Hetzner K8s Cluster
 
-3-node Kubernetes cluster (k3s) on Hetzner Cloud with Terraform + cloud-init.
+Production-ready Kubernetes cluster (k3s) on Hetzner Cloud with full Infrastructure as Code.
 
 ```
 Internet → *.k8s.simon-frey.com → Hetzner LB → Traefik Ingress → Your Apps
@@ -20,16 +20,30 @@ Internet → *.k8s.simon-frey.com → Hetzner LB → Traefik Ingress → Your Ap
 | TLS | cert-manager + Let's Encrypt (HTTP-01 per service) |
 | Cloud integration | Hetzner CCM + CSI |
 | Auto-scaling | Cluster Autoscaler (0-5 workers) |
+| VPN Access | wireproxy (userspace WireGuard, K8s API restricted to VPN) |
+| Monitoring | kube-prometheus-stack (Prometheus + Grafana) |
+
+## Security Features
+
+- **K8s API Access**: Restricted to WireGuard tunnel via wireproxy (port 6443 not publicly exposed)
+- **etcd Encryption**: Secrets encrypted at rest
+- **kubeconfig Permissions**: 600 (owner only)
+- **Pod Security Standards**: Restricted policy enforced on demo namespace
+- **Security Contexts**: All workloads run as non-root with dropped capabilities
+- **Firewall**: Explicit allow-list for all ports (no "any" rules)
+- **RBAC**: Minimal permissions for cluster autoscaler
+- **Resource Quotas**: Limit namespace resource consumption
+- **PV Reclaim Policy**: Retain (prevents accidental data loss)
 
 ## Cost
 
 | Resource | Spec | Monthly    |
 |----------|------|------------|
-| Control plane | cx33 (always on) | €5.94      |
-| Load balancer | lb11 | €5.39      |
-| **Base cost** | | **€9.38**  |
-| Workers (0-5) | cx33 (on demand) | €0-30      |
-| **Max cost** | 5 workers | **€29.33** |
+| Control plane | cx23 (always on) | ~€5      |
+| Load balancer | lb11 | ~€5      |
+| **Base cost** | | **~€10**  |
+| Workers (0-5) | cx23 (on demand) | €0-25      |
+| **Max cost** | 5 workers | **~€35** |
 
 ## Quick Start
 
@@ -37,11 +51,15 @@ Internet → *.k8s.simon-frey.com → Hetzner LB → Traefik Ingress → Your Ap
 
 ```bash
 # Install tools
-brew install terraform kubectl helm   # macOS
-# apt install terraform kubectl helm  # Linux
+brew install terraform kubectl helm wireproxy jq  # macOS
+# apt install terraform kubectl helm jq && go install github.com/pufferffish/wireproxy/cmd/wireproxy@latest  # Linux
 
 # Create SSH key
 ssh-keygen -t ed25519 -f ~/.ssh/hetzner-k8s -N ""
+
+# Create Wireguard keys
+mkdir -p ~/.wireguard
+wg genkey | tee ~/.wireguard/hetzner-k8s-private | wg pubkey > ~/.wireguard/hetzner-k8s-public
 
 # Create Hetzner Cloud project + API token
 # → https://console.hetzner.cloud → New Project → API Tokens → Generate (Read/Write)
@@ -51,36 +69,77 @@ ssh-keygen -t ed25519 -f ~/.ssh/hetzner-k8s -N ""
 
 ```bash
 # Create .env file
-echo 'HETZNER_CLOUD_API_TOKEN="your-token-here"' > .env
+cat > .env << 'EOF'
+HETZNER_CLOUD_API_TOKEN="your-token-here"
+EOF
 ```
 
-### 3. Deploy
+### 3. Deploy Infrastructure
+
+Terraform provisions servers, network, load balancer, firewall, and a wireproxy tunnel (userspace WireGuard — no `sudo` required). Requires `wireproxy` installed.
 
 ```bash
 # Source environment and export for Terraform
-source .env && export TF_VAR_hcloud_token="$HETZNER_CLOUD_API_TOKEN"
+source .env
+export TF_VAR_hcloud_token="$HETZNER_CLOUD_API_TOKEN"
+export TF_VAR_wireguard_client_public_key="$(cat ~/.wireguard/hetzner-k8s-public)"
+export TF_VAR_wireguard_client_private_key="$(cat ~/.wireguard/hetzner-k8s-private)"
 
-# Deploy infrastructure
+# Deploy infrastructure (servers, network, LB, firewall, WireGuard)
 terraform init
 terraform plan
-terraform apply   # ~2 min
+terraform apply   # ~5-10 min (includes waiting for k3s + WireGuard setup)
 ```
 
-### 4. Post-Deploy Setup
+Terraform writes `.wireproxy.conf` in the project root and starts wireproxy in the background (PID in `.wireproxy.pid`). It creates a TCP tunnel from `127.0.0.1:6443` to the K8s API over WireGuard. On `terraform destroy`, the process is stopped and config files cleaned up automatically.
+
+### 4. Configure Kubernetes Workloads
+
+The post-deploy script configures everything that runs inside the cluster: Traefik, cert-manager, cluster autoscaler, and optionally monitoring.
 
 ```bash
-# Wait for cloud-init (~3-5 min), then run:
-./scripts/post-deploy.sh
+./scripts/post-deploy.sh              # interactive (prompts for monitoring)
+./scripts/post-deploy.sh --monitoring  # include monitoring stack
+./scripts/post-deploy.sh --no-monitoring
 ```
 
-This script:
-- Waits for cloud-init completion
-- Fetches kubeconfig from control plane
-- Configures Traefik for proxy protocol
-- Installs cert-manager
-- Applies Let's Encrypt ClusterIssuer
+This automatically saves the kubeconfig to `.kubeconfig` in the project root.
 
-### 5. DNS Setup
+### 5. Configure kubectl (manual)
+
+`post-deploy.sh` handles kubeconfig automatically, but you can also set it up manually:
+
+```bash
+# Save kubeconfig
+terraform output -raw kubeconfig > ~/.kube/hetzner-k8s.yaml
+chmod 600 ~/.kube/hetzner-k8s.yaml
+
+# Use it
+export KUBECONFIG=~/.kube/hetzner-k8s.yaml
+kubectl get nodes
+```
+
+### 6. wireproxy Management
+
+The tunnel is managed by Terraform, but you can also control it manually:
+
+```bash
+# Check if wireproxy is running
+cat .wireproxy.pid && ps -p $(cat .wireproxy.pid)
+
+# View tunnel logs
+cat .wireproxy.log
+
+# Restart manually
+kill $(cat .wireproxy.pid) 2>/dev/null
+nohup wireproxy -c .wireproxy.conf > .wireproxy.log 2>&1 &
+echo $! > .wireproxy.pid
+
+# Verify K8s API is reachable through tunnel
+kubectl --kubeconfig .kubeconfig get nodes
+```
+
+### 7. DNS Setup
 
 After deploy, add these records in Cloudflare (DNS-only mode, gray cloud):
 
@@ -89,7 +148,7 @@ After deploy, add these records in Cloudflare (DNS-only mode, gray cloud):
 | A | `*.k8s` | `<LB_IP from terraform output>` |
 | A | `k8s` | `<LB_IP from terraform output>` |
 
-### 6. Test
+### 8. Test
 
 ```bash
 # Deploy example app
@@ -106,20 +165,21 @@ curl https://hello.k8s.simon-frey.com
 
 ```
 hetzner-k8s/
-├── main.tf                         # Servers, network, firewall, LB
-├── variables.tf                    # Input variables
-├── outputs.tf                      # IPs, DNS instructions
+├── main.tf                         # Servers, network, firewall, LB, providers
+├── variables.tf                    # Input variables with validation
+├── outputs.tf                      # IPs, kubeconfig, Wireguard config
 ├── cloud-init-server.yaml.tpl      # Control plane provisioning
 ├── cloud-init-agent.yaml.tpl       # Worker provisioning
-├── .env                            # API token (not in git)
-├── .gitignore
 ├── scripts/
-│   └── post-deploy.sh              # Automated post-deploy setup
-└── manifests/
-    ├── traefik-config.yaml         # Proxy protocol configuration
-    ├── cert-manager-issuer.yaml    # Let's Encrypt ClusterIssuer
-    ├── example-app.yaml            # Test deployment with auto-TLS
-    └── cluster-autoscaler.yaml     # Scale workers 0-5
+│   └── post-deploy.sh              # Configures K8s workloads after terraform apply
+├── manifests/
+│   ├── traefik-config.yaml         # Proxy protocol config for Hetzner LB
+│   ├── cert-manager-issuer.yaml    # Let's Encrypt ClusterIssuer
+│   ├── cluster-autoscaler.yaml     # Autoscaler namespace, RBAC, deployment
+│   ├── monitoring-values.yaml      # Helm values for kube-prometheus-stack
+│   └── example-app.yaml            # Test deployment with security best practices
+├── .env                            # API token (not in git)
+└── .gitignore
 ```
 
 ## Adding a New Service
@@ -151,23 +211,29 @@ spec:
                   number: 80
 ```
 
-## Cluster Autoscaler
+## Monitoring (Optional)
 
-The cluster can scale workers from 0-5 across three datacenters:
-- fsn1 (Falkenstein)
-- nbg1 (Nuremberg)
-- hel1 (Helsinki)
-
-The control plane always runs workloads (no taint) since workers can scale to 0.
-
-To enable autoscaling:
+Monitoring is not installed by default. Install it via the post-deploy script or manually with Helm:
 
 ```bash
-# Apply the autoscaler manifest (follow instructions in the file)
-kubectl apply -f manifests/cluster-autoscaler.yaml
+# Via post-deploy script
+./scripts/post-deploy.sh --monitoring
 
-# Create the required secret with your credentials
-# See comments at the bottom of cluster-autoscaler.yaml
+# Or manually with Helm
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+  --namespace monitoring --create-namespace \
+  -f manifests/monitoring-values.yaml
+```
+
+Access Grafana at `https://grafana.k8s.simon-frey.com` (after DNS setup).
+
+Default credentials: `admin` / `admin` (change in production!)
+
+Or use port-forward:
+```bash
+kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80
+# Open http://localhost:3000
 ```
 
 ## Operations
@@ -183,7 +249,13 @@ journalctl -u k3s-agent    # on workers
 # View cluster nodes
 kubectl get nodes -o wide
 
-# Destroy everything
+# View autoscaler logs
+kubectl -n cluster-autoscaler logs -f deployment/cluster-autoscaler
+
+# Stop wireproxy tunnel
+kill $(cat .wireproxy.pid) 2>/dev/null
+
+# Destroy everything (K8s resources are ephemeral, no separate teardown needed)
 terraform destroy
 ```
 
@@ -191,27 +263,38 @@ terraform destroy
 
 | Issue | Check |
 |-------|-------|
+| Can't connect to API | Is wireproxy running? `ps -p $(cat .wireproxy.pid)` and check `.wireproxy.log` |
 | Workers not joining | `ssh root@<worker-ip> journalctl -u k3s-agent` and `cloud-init status` |
 | LB health checks failing | `kubectl get pods -n kube-system` — is Traefik running? |
 | Cert not issuing | `kubectl describe certificate -n <namespace>` and `kubectl logs -n cert-manager deploy/cert-manager` |
-| Pods stuck Pending | `kubectl describe pod <pod>` — check resource constraints |
+| Pods stuck Pending | `kubectl describe pod <pod>` — check resource constraints or control plane taint |
 | No real client IPs | Verify Traefik config: `kubectl get helmchartconfig -n kube-system traefik -o yaml` |
-| All kube-system pods Pending | See "Uninitialized Node Taint" section below |
+| Monitoring not working | Check `kubectl -n monitoring get pods` |
 
-### Uninitialized Node Taint
+### Control Plane Taint
 
-If all pods in `kube-system` are stuck in `Pending` state (including coredns, traefik, CCM), check for the `node.cloudprovider.kubernetes.io/uninitialized` taint:
+The control plane has a `NoSchedule` taint to prefer running workloads on workers. System components (autoscaler, monitoring) have tolerations to run on it.
 
-```bash
-kubectl describe node <control-plane-node> | grep -A5 Taints
-```
+If workers scale to zero, workloads with the toleration will run on the control plane.
 
-**Cause**: When kubelet uses `--cloud-provider=external`, Kubernetes automatically adds this taint. The Hetzner CCM is supposed to remove it after initializing the node, but if the CCM itself can't schedule due to this taint, you get a deadlock.
+## Known Limitations
 
-**Fix**: Remove the taint manually from the control plane:
+- **Single control plane**: No HA (acceptable for dev/small production clusters)
+- **No Network Policies**: Planned with service mesh
+- **wireproxy required**: K8s API not accessible without the wireproxy tunnel
+- **SSH key path**: Assumes `~/.ssh/hetzner-k8s`
 
-```bash
-kubectl taint nodes <control-plane-node> node.cloudprovider.kubernetes.io/uninitialized-
-```
+## Variables
 
-This is already fixed in the current `cloud-init-server.yaml.tpl` — the control plane no longer uses `--kubelet-arg="cloud-provider=external"` to avoid this deadlock. Workers still use it for proper CCM integration (node lifecycle, labels, etc.).
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `hcloud_token` | Hetzner Cloud API token | (required) |
+| `cluster_name` | Name prefix for resources | `hetzner-k8s` |
+| `server_type` | Server type for nodes | `cx23` |
+| `wireguard_client_public_key` | Your Wireguard public key | (required for VPN) |
+| `wireguard_client_private_key` | Your Wireguard private key (sensitive) | (required for VPN) |
+| `enable_wireguard` | Enable Wireguard VPN | `true` |
+| `autoscaler_min_nodes` | Minimum workers | `0` |
+| `autoscaler_max_nodes` | Maximum workers | `5` |
+
+See `variables.tf` for all options.

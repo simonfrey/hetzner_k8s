@@ -1,5 +1,5 @@
 # Traefik HelmChartConfig to enable proxy protocol
-# This allows Traefik to receive real client IPs from Hetzner Load Balancer
+# Applied by scripts/post-deploy.sh after cluster provisioning.
 apiVersion: helm.cattle.io/v1
 kind: HelmChartConfig
 metadata:
@@ -54,11 +54,11 @@ spec:
               X-Forwarded-For: keep
               X-Real-IP: keep
 
-    # Provider configuration
+    # Provider configuration - cross-namespace DISABLED for security
     providers:
       kubernetesCRD:
         enabled: true
-        allowCrossNamespace: true
+        allowCrossNamespace: false
       kubernetesIngress:
         enabled: true
         publishedService:

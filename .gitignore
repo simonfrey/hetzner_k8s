@@ -44,6 +44,9 @@ Thumbs.db
 # Logs
 *.log
 
+# WireProxy (userspace WireGuard tunnel)
+.wireproxy.*
+
 # Temporary files
 tmp/
 temp/

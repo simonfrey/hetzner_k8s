@@ -1,0 +1,11 @@
+# HTTPS redirect middleware for Grafana ingress
+# Required because Traefik has allowCrossNamespace: false
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-https
+  namespace: monitoring
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true

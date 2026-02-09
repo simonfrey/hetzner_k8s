@@ -1,10 +1,30 @@
 # Example app with automatic TLS via cert-manager
-# Demonstrates the per-service HTTP-01 certificate pattern
+# Demonstrates security best practices for Kubernetes deployments
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: demo
+  labels:
+    # Pod Security Standards - enforce restricted policy
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+---
+# ResourceQuota to limit namespace resource consumption
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: demo-quota
+  namespace: demo
+spec:
+  hard:
+    requests.cpu: "2"
+    requests.memory: 2Gi
+    limits.cpu: "4"
+    limits.memory: 4Gi
+    pods: "10"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -21,11 +41,46 @@ spec:
       labels:
         app: hello
     spec:
+      # Don't mount service account token (not needed for this app)
+      automountServiceAccountToken: false
+
+      # Security context at pod level
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+
+      # Pod anti-affinity to spread across nodes
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: hello
+                topologyKey: kubernetes.io/hostname
+
       containers:
         - name: hello
-          image: traefik/whoami:latest
+          image: traefik/whoami:v1.10.3
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 80
+
+          # Security context at container level
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
           resources:
             requests:
               cpu: 10m
@@ -33,6 +88,26 @@ spec:
             limits:
               cpu: 100m
               memory: 64Mi
+
+          # Health checks
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+            successThreshold: 1
+            failureThreshold: 3
 ---
 apiVersion: v1
 kind: Service
@@ -46,6 +121,28 @@ spec:
     - port: 80
       targetPort: 80
 ---
+# PodDisruptionBudget to ensure availability during maintenance
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: hello-pdb
+  namespace: demo
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: hello
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-https
+  namespace: demo
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -54,6 +151,7 @@ metadata:
   annotations:
     # This annotation triggers automatic certificate creation
     cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.middlewares: demo-redirect-https@kubernetescrd
 spec:
   ingressClassName: traefik
   tls:

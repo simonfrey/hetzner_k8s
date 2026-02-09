@@ -1,0 +1,117 @@
+# Helm values for kube-prometheus-stack
+# Tuned for small Hetzner k3s clusters
+#
+# Install with:
+#   helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+#     --namespace monitoring --create-namespace \
+#     -f manifests/monitoring-values.yaml
+
+# Prometheus configuration
+prometheus:
+  prometheusSpec:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+    retention: 7d
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: hcloud-volumes
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 10Gi
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+
+# Grafana configuration
+grafana:
+  enabled: true
+  adminPassword: admin  # Change in production!
+  persistence:
+    enabled: true
+    storageClassName: hcloud-volumes
+    size: 5Gi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+  defaultDashboardsEnabled: true
+  defaultDashboardsTimezone: utc
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+      traefik.ingress.kubernetes.io/router.middlewares: monitoring-redirect-https@kubernetescrd
+    hosts:
+      - grafana.k8s.simon-frey.com
+    tls:
+      - secretName: grafana-tls
+        hosts:
+          - grafana.k8s.simon-frey.com
+
+# Alertmanager configuration
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+
+# Node exporter (runs on all nodes)
+nodeExporter:
+  enabled: true
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+
+# kube-state-metrics
+kubeStateMetrics:
+  enabled: true
+
+# Prometheus Operator
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+
+# Disable components not needed for k3s
+kubeEtcd:
+  enabled: false  # k3s uses embedded etcd
+kubeScheduler:
+  enabled: false  # k3s integrated
+kubeControllerManager:
+  enabled: false  # k3s integrated
+kubeProxy:
+  enabled: false  # k3s uses kube-proxy but exposes different metrics

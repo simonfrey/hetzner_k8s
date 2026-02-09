@@ -1,56 +1,88 @@
 # Hetzner Cloud Cluster Autoscaler
-# Scales workers 0-5 across nbg1, hel1 (cx33 not available in fsn1)
+# Applied by scripts/post-deploy.sh after cluster provisioning.
 #
-# Before applying, create the autoscaler secret with your cloud-init template.
-# See instructions at the bottom of this file.
+# The autoscaler secret is created automatically by post-deploy.sh.
+# To create it manually:
+#   kubectl create secret generic hcloud-autoscaler \
+#     --namespace=cluster-autoscaler \
+#     --from-literal=token="YOUR_HCLOUD_TOKEN" \
+#     --from-literal=cloud-init="$(terraform output -raw worker_cloud_init_base64)" \
+#     --from-literal=network="hetzner-k8s-network" \
+#     --from-literal=ssh-key="hetzner-k8s-key" \
+#     --from-literal=firewall="hetzner-k8s-fw"
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: cluster-autoscaler
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: cluster-autoscaler
   namespace: cluster-autoscaler
+automountServiceAccountToken: true
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: cluster-autoscaler
 rules:
+  # Events (create/patch for status updates)
   - apiGroups: [""]
-    resources: ["events", "endpoints"]
+    resources: ["events"]
     verbs: ["create", "patch"]
+
+  # Endpoints (leader election)
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    resourceNames: ["cluster-autoscaler"]
+    verbs: ["get", "update"]
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    verbs: ["create"]
+
+  # Pods (eviction)
   - apiGroups: [""]
     resources: ["pods/eviction"]
     verbs: ["create"]
   - apiGroups: [""]
     resources: ["pods/status"]
     verbs: ["update"]
-  - apiGroups: [""]
-    resources: ["endpoints"]
-    resourceNames: ["cluster-autoscaler"]
-    verbs: ["get", "update"]
+
+  # Nodes (core autoscaler functionality)
   - apiGroups: [""]
     resources: ["nodes"]
     verbs: ["watch", "list", "get", "update"]
+
+  # Read-only access to core resources
   - apiGroups: [""]
     resources: ["namespaces", "pods", "services", "replicationcontrollers", "persistentvolumeclaims", "persistentvolumes"]
     verbs: ["watch", "list", "get"]
+
+  # Jobs and CronJobs
   - apiGroups: ["batch"]
     resources: ["jobs", "cronjobs"]
     verbs: ["watch", "list", "get"]
-  - apiGroups: ["extensions", "apps"]
+
+  # Apps resources
+  - apiGroups: ["apps"]
     resources: ["daemonsets", "replicasets", "statefulsets"]
     verbs: ["watch", "list", "get"]
+
+  # Policy resources
   - apiGroups: ["policy"]
     resources: ["poddisruptionbudgets"]
     verbs: ["watch", "list"]
+
+  # Storage resources
   - apiGroups: ["storage.k8s.io"]
     resources: ["storageclasses", "csinodes", "csidrivers", "csistoragecapacities"]
     verbs: ["watch", "list", "get"]
+
+  # Leader election
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["create"]
@@ -90,9 +122,33 @@ spec:
         app: cluster-autoscaler
     spec:
       serviceAccountName: cluster-autoscaler
+      automountServiceAccountToken: true
+
+      # Tolerate control plane taint
       tolerations:
         - key: node-role.kubernetes.io/control-plane
+          operator: Exists
           effect: NoSchedule
+
+      # Prefer running on control plane
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: Exists
+
+      # Pod-level security context
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+
       containers:
         - name: cluster-autoscaler
           image: registry.k8s.io/autoscaling/cluster-autoscaler:v1.29.0
@@ -100,8 +156,8 @@ spec:
             - ./cluster-autoscaler
             - --cloud-provider=hetzner
             - --namespace=cluster-autoscaler
-            - --nodes=0:5:CX33:NBG1:workers-nbg1
-            - --nodes=0:5:CX33:HEL1:workers-hel1
+            - --nodes=0:5:cx23:NBG1:workers-nbg1
+            - --nodes=0:5:cx23:HEL1:workers-hel1
             - --scale-down-enabled=true
             - --scale-down-delay-after-add=5m
             - --scale-down-unneeded-time=5m
@@ -111,6 +167,7 @@ spec:
             - --balance-similar-node-groups=true
             - --expander=least-waste
             - --v=4
+
           env:
             - name: HCLOUD_TOKEN
               valueFrom:
@@ -139,6 +196,7 @@ spec:
                 secretKeyRef:
                   name: hcloud-autoscaler
                   key: firewall
+
           resources:
             requests:
               cpu: 100m
@@ -146,31 +204,13 @@ spec:
             limits:
               cpu: 500m
               memory: 500Mi
----
-# =============================================================================
-# INSTRUCTIONS: Create the autoscaler secret
-# =============================================================================
-#
-# After terraform apply, run these commands to create the secret:
-#
-# 1. Get the values from terraform output:
-#    terraform output autoscaler_config
-#
-# 2. Create the cloud-init template for workers (base64 encoded):
-#    CLOUD_INIT=$(cat cloud-init-agent.yaml.tpl | base64 -w0)
-#
-# 3. Create the secret:
-#    kubectl create secret generic hcloud-autoscaler \
-#      --namespace=cluster-autoscaler \
-#      --from-literal=token="YOUR_HCLOUD_TOKEN" \
-#      --from-literal=cloud-init="$CLOUD_INIT" \
-#      --from-literal=network="hetzner-k8s-network" \
-#      --from-literal=ssh-key="hetzner-k8s-key" \
-#      --from-literal=firewall="hetzner-k8s-fw"
-#
-# Note: The cloud-init template must be a valid template that the autoscaler
-# will use when creating new nodes. It should be the rendered version of
-# cloud-init-agent.yaml.tpl with the actual values filled in.
-#
-# Alternative: Use the scripts/setup-autoscaler.sh script to automate this.
-# =============================================================================
+
+          # Container-level security context
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL

@@ -1,206 +1,233 @@
-#!/bin/bash
-# Post-deploy script for Hetzner K8s cluster
-# Run this after terraform apply completes
-
+#!/usr/bin/env bash
+# ============================================================================
+# Post-deploy: configure Kubernetes workloads after Terraform provisions infra
+# ============================================================================
+# Usage:
+#   ./scripts/post-deploy.sh              # interactive (prompts for monitoring)
+#   ./scripts/post-deploy.sh --monitoring # install monitoring stack
+#   ./scripts/post-deploy.sh --no-monitoring
+# ============================================================================
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+KUBECONFIG_PATH="$ROOT_DIR/.kubeconfig"
 
-# Colors for output
+# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-log() { echo -e "${GREEN}[INFO]${NC} $1"; }
-warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
+info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
+warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
+error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
+die()   { error "$@"; exit 1; }
 
-# ============================================================================
-# Load environment
-# ============================================================================
-
-if [[ -f "$PROJECT_DIR/.env" ]]; then
-    source "$PROJECT_DIR/.env"
-    export HCLOUD_TOKEN="${HETZNER_CLOUD_API_TOKEN:-}"
-fi
-
-if [[ -z "${HCLOUD_TOKEN:-}" ]]; then
-    error "HCLOUD_TOKEN not set. Create .env with HETZNER_CLOUD_API_TOKEN"
-fi
-
-# ============================================================================
-# Get control plane IP from Terraform
-# ============================================================================
-
-cd "$PROJECT_DIR"
-
-if ! command -v terraform &> /dev/null; then
-    error "terraform not found. Install it first."
-fi
-
-log "Getting control plane IP from Terraform..."
-CP_IP=$(terraform output -raw control_plane_public_ip 2>/dev/null) || error "Run 'terraform apply' first"
-
-log "Control plane IP: $CP_IP"
-
-# ============================================================================
-# Wait for cloud-init to complete
-# ============================================================================
-
-SSH_KEY="${SSH_KEY:-$HOME/.ssh/hetzner-k8s}"
-SSH_OPTS="-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10"
-
-log "Waiting for cloud-init to complete on control plane..."
-for i in {1..60}; do
-    if ssh $SSH_OPTS -i "$SSH_KEY" "root@$CP_IP" "cloud-init status --wait" 2>/dev/null | grep -q "done"; then
-        log "Cloud-init completed!"
-        break
-    fi
-    if [[ $i -eq 60 ]]; then
-        error "Timeout waiting for cloud-init"
-    fi
-    echo -n "."
-    sleep 10
+# Parse flags
+INSTALL_MONITORING=""
+for arg in "$@"; do
+  case "$arg" in
+    --monitoring)    INSTALL_MONITORING=yes ;;
+    --no-monitoring) INSTALL_MONITORING=no ;;
+    -h|--help)
+      echo "Usage: $0 [--monitoring|--no-monitoring]"
+      exit 0
+      ;;
+    *) die "Unknown argument: $arg" ;;
+  esac
 done
 
 # ============================================================================
-# Fetch kubeconfig
+# Prerequisites
 # ============================================================================
 
-KUBECONFIG_DIR="$HOME/.kube"
-KUBECONFIG_FILE="$KUBECONFIG_DIR/hetzner-k8s.yaml"
+command -v terraform >/dev/null || die "terraform not found in PATH"
+command -v kubectl   >/dev/null || die "kubectl not found in PATH"
+command -v helm      >/dev/null || die "helm not found in PATH (needed for cert-manager and monitoring)"
 
-mkdir -p "$KUBECONFIG_DIR"
+cd "$ROOT_DIR"
 
-log "Fetching kubeconfig..."
-scp $SSH_OPTS -i "$SSH_KEY" "root@$CP_IP:/etc/rancher/k3s/k3s.yaml" "$KUBECONFIG_FILE"
+# ============================================================================
+# 1. Fetch kubeconfig from Terraform
+# ============================================================================
 
-# Update server address
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    sed -i '' "s|127.0.0.1|$CP_IP|g" "$KUBECONFIG_FILE"
+info "Fetching kubeconfig from Terraform outputs..."
+terraform output -raw kubeconfig > "$KUBECONFIG_PATH" 2>/dev/null \
+  || die "Failed to fetch kubeconfig. Have you run 'terraform apply'?"
+chmod 600 "$KUBECONFIG_PATH"
+export KUBECONFIG="$KUBECONFIG_PATH"
+info "Kubeconfig saved to $KUBECONFIG_PATH"
+
+# ============================================================================
+# 2. Wait for nodes to be Ready
+# ============================================================================
+
+info "Waiting for nodes to be Ready..."
+TIMEOUT=300
+ELAPSED=0
+until kubectl get nodes 2>/dev/null | grep -q ' Ready'; do
+  sleep 5
+  ELAPSED=$((ELAPSED + 5))
+  if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+    die "Timeout waiting for nodes to be Ready (${TIMEOUT}s)"
+  fi
+done
+kubectl get nodes
+info "Nodes are Ready."
+
+# ============================================================================
+# 3. Apply Traefik config (proxy protocol for Hetzner LB)
+# ============================================================================
+
+info "Applying Traefik HelmChartConfig..."
+kubectl apply -f manifests/traefik-config.yaml
+
+info "Restarting Traefik to pick up config..."
+kubectl -n kube-system rollout restart deployment traefik 2>/dev/null \
+  || kubectl -n kube-system rollout restart daemonset traefik 2>/dev/null \
+  || warn "Could not restart Traefik — it may pick up the config on its own"
+
+# ============================================================================
+# 4. Install cert-manager via Helm
+# ============================================================================
+
+info "Installing cert-manager..."
+helm repo add jetstack https://charts.jetstack.io 2>/dev/null || true
+helm repo update jetstack
+
+if helm status cert-manager -n cert-manager &>/dev/null; then
+  info "cert-manager already installed, upgrading..."
+  helm upgrade cert-manager jetstack/cert-manager \
+    --namespace cert-manager \
+    --set crds.enabled=true \
+    --set startupapicheck.enabled=false \
+    --wait --timeout 10m
 else
-    sed -i "s|127.0.0.1|$CP_IP|g" "$KUBECONFIG_FILE"
+  helm install cert-manager jetstack/cert-manager \
+    --namespace cert-manager --create-namespace \
+    --set crds.enabled=true \
+    --set startupapicheck.enabled=false \
+    --wait --timeout 10m
 fi
-
-chmod 600 "$KUBECONFIG_FILE"
-export KUBECONFIG="$KUBECONFIG_FILE"
-
-log "Kubeconfig saved to: $KUBECONFIG_FILE"
+info "cert-manager installed."
 
 # ============================================================================
-# Verify cluster
+# 5. Wait for cert-manager webhook to be ready
 # ============================================================================
 
-log "Verifying cluster..."
-kubectl get nodes || error "Failed to connect to cluster"
-
-# Wait for all nodes to be Ready
-log "Waiting for nodes to be Ready..."
-kubectl wait --for=condition=Ready nodes --all --timeout=300s
+info "Waiting for cert-manager webhook..."
+kubectl -n cert-manager rollout status deployment cert-manager-webhook --timeout=120s
+sleep 5  # extra buffer for webhook to register
 
 # ============================================================================
-# Apply Traefik proxy protocol configuration
+# 6. Apply ClusterIssuers
 # ============================================================================
 
-log "Configuring Traefik for proxy protocol..."
-kubectl apply -f "$PROJECT_DIR/manifests/traefik-config.yaml"
-
-# Restart Traefik to pick up changes
-log "Restarting Traefik..."
-kubectl -n kube-system rollout restart deployment traefik 2>/dev/null || \
-kubectl -n kube-system rollout restart daemonset traefik 2>/dev/null || \
-warn "Could not restart Traefik - it may be using a different deployment method"
-
-# ============================================================================
-# Install cert-manager
-# ============================================================================
-
-log "Installing cert-manager..."
-
-if ! command -v helm &> /dev/null; then
-    warn "Helm not found. Installing cert-manager via kubectl..."
-    kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.4/cert-manager.yaml
-else
-    # Add Jetstack Helm repo
-    helm repo add jetstack https://charts.jetstack.io --force-update
-    helm repo update
-
-    # Install cert-manager
-    helm upgrade --install cert-manager jetstack/cert-manager \
-        --namespace cert-manager \
-        --create-namespace \
-        --set crds.enabled=true \
-        --wait
-fi
-
-# Wait for cert-manager to be ready
-log "Waiting for cert-manager..."
-kubectl -n cert-manager wait --for=condition=Available deployment --all --timeout=600s
+info "Applying Let's Encrypt ClusterIssuers..."
+# Retry loop — the webhook can take a moment to start serving
+for i in $(seq 1 12); do
+  if kubectl apply -f manifests/cert-manager-issuer.yaml 2>/dev/null; then
+    break
+  fi
+  if [ "$i" -eq 12 ]; then
+    die "Failed to apply ClusterIssuers after 60s"
+  fi
+  warn "Waiting for cert-manager CRDs to be ready..."
+  sleep 5
+done
+info "ClusterIssuers applied."
 
 # ============================================================================
-# Apply ClusterIssuer
+# 7. Set up cluster autoscaler
 # ============================================================================
 
-log "Applying Let's Encrypt ClusterIssuer..."
-kubectl apply -f "$PROJECT_DIR/manifests/cert-manager-issuer.yaml"
+info "Setting up cluster autoscaler..."
 
-# ============================================================================
-# Install Cluster Autoscaler
-# ============================================================================
+# Fetch dynamic values from Terraform outputs
+HCLOUD_TOKEN="$(terraform output -raw hcloud_token 2>/dev/null)" \
+  || die "Failed to read hcloud_token from Terraform outputs. Add: output \"hcloud_token\" { value = var.hcloud_token; sensitive = true }"
+CLOUD_INIT_B64="$(terraform output -raw worker_cloud_init_base64 2>/dev/null)" \
+  || die "Failed to read worker_cloud_init_base64 from Terraform outputs"
+CLUSTER_NAME="$(terraform output -raw cluster_name 2>/dev/null)" \
+  || die "Failed to read cluster_name from Terraform outputs"
 
-log "Setting up cluster autoscaler..."
-
-# Get values from terraform
-CLUSTER_NAME=$(terraform output -raw cluster_name)
 NETWORK_NAME="${CLUSTER_NAME}-network"
 SSH_KEY_NAME="${CLUSTER_NAME}-key"
 FIREWALL_NAME="${CLUSTER_NAME}-fw"
 
-# Create namespace
-kubectl create namespace cluster-autoscaler --dry-run=client -o yaml | kubectl apply -f -
+# Apply the manifest (namespace, RBAC, deployment)
+kubectl apply -f manifests/cluster-autoscaler.yaml
 
-# Render the cloud-init template for workers
-CLOUD_INIT_RENDERED=$(terraform output -raw worker_cloud_init_base64)
+# Create or update the secret with live values
+kubectl -n cluster-autoscaler create secret generic hcloud-autoscaler \
+  --from-literal=token="$HCLOUD_TOKEN" \
+  --from-literal=cloud-init="$CLOUD_INIT_B64" \
+  --from-literal=network="$NETWORK_NAME" \
+  --from-literal=ssh-key="$SSH_KEY_NAME" \
+  --from-literal=firewall="$FIREWALL_NAME" \
+  --dry-run=client -o yaml | kubectl apply -f -
 
-# Create the autoscaler secret
-kubectl create secret generic hcloud-autoscaler \
-    --namespace=cluster-autoscaler \
-    --from-literal=token="$HCLOUD_TOKEN" \
-    --from-literal=cloud-init="$CLOUD_INIT_RENDERED" \
-    --from-literal=network="$NETWORK_NAME" \
-    --from-literal=ssh-key="$SSH_KEY_NAME" \
-    --from-literal=firewall="$FIREWALL_NAME" \
-    --dry-run=client -o yaml | kubectl apply -f -
-
-# Apply autoscaler manifest
-kubectl apply -f "$PROJECT_DIR/manifests/cluster-autoscaler.yaml"
-
-log "Waiting for autoscaler to be ready..."
-kubectl -n cluster-autoscaler wait --for=condition=Available deployment/cluster-autoscaler --timeout=120s
+# Restart the autoscaler to pick up the secret
+kubectl -n cluster-autoscaler rollout restart deployment cluster-autoscaler
+info "Cluster autoscaler deployed."
 
 # ============================================================================
-# Done!
+# 8. Optionally install monitoring (kube-prometheus-stack)
 # ============================================================================
 
-LB_IP=$(terraform output -raw load_balancer_ip)
+if [ -z "$INSTALL_MONITORING" ]; then
+  echo ""
+  read -rp "Install monitoring stack (kube-prometheus-stack)? [y/N] " answer
+  case "$answer" in
+    [yY]*) INSTALL_MONITORING=yes ;;
+    *)     INSTALL_MONITORING=no ;;
+  esac
+fi
+
+if [ "$INSTALL_MONITORING" = "yes" ]; then
+  info "Installing kube-prometheus-stack..."
+  helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>/dev/null || true
+  helm repo update prometheus-community
+
+  # Create namespace with required label
+  kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+  kubectl label namespace monitoring pod-security.kubernetes.io/enforce=privileged --overwrite
+
+  if helm status kube-prometheus-stack -n monitoring &>/dev/null; then
+    info "kube-prometheus-stack already installed, upgrading..."
+    helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+      --namespace monitoring \
+      -f manifests/monitoring-values.yaml \
+      --wait --timeout 15m
+  else
+    helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+      --namespace monitoring \
+      -f manifests/monitoring-values.yaml \
+      --wait --timeout 15m
+  fi
+  info "Monitoring stack installed."
+
+  info "Applying monitoring ingress resources..."
+  kubectl apply -f manifests/monitoring-ingress.yaml
+
+  info "Grafana: kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80"
+  info "Default credentials: admin / admin"
+else
+  info "Skipping monitoring stack. Install later with: $0 --monitoring"
+fi
+
+# ============================================================================
+# Done
+# ============================================================================
 
 echo ""
-log "================================================"
-log "Post-deploy complete!"
-log "================================================"
+info "Post-deploy complete!"
 echo ""
-echo "Kubeconfig: export KUBECONFIG=$KUBECONFIG_FILE"
+echo "  export KUBECONFIG=$KUBECONFIG_PATH"
+echo "  kubectl get nodes"
+echo "  kubectl get clusterissuer"
+echo "  kubectl -n cluster-autoscaler get deploy"
 echo ""
-echo "Next steps:"
-echo "  1. Add DNS records in Cloudflare:"
-echo "     - A record: *.k8s -> $LB_IP"
-echo "     - A record: k8s -> $LB_IP"
-echo ""
-echo "  2. Deploy the example app:"
-echo "     kubectl apply -f manifests/example-app.yaml"
-echo ""
-echo "  3. Check certificate status:"
-echo "     kubectl get certificate -w"
+echo "  Deploy test app:  kubectl apply -f manifests/example-app.yaml"
 echo ""

@@ -9,6 +9,7 @@ packages:
 
 write_files:
   # Worker-fetch SSH private key (used to grab join token from control plane)
+  # This key will be securely deleted after use
   - path: /root/.ssh/worker_fetch
     permissions: "0600"
     content: |
@@ -49,27 +50,48 @@ runcmd:
     done
     echo "Control plane API is reachable"
 
-  # Fetch join token from control plane via SSH
+  # Fetch join token from control plane via SSH with exponential backoff
   - |
     echo "Fetching k3s join token..."
+    TOKEN_FILE="/var/lib/rancher/k3s/server/node-token"
+    DELAY=5
+    MAX_DELAY=60
     for i in $(seq 1 60); do
-      K3S_TOKEN=$(ssh -o ConnectTimeout=5 control-plane "cat /var/lib/rancher/k3s/server/node-token" 2>/dev/null)
-      if [ -n "$K3S_TOKEN" ]; then
-        echo "Got token"
-        break
+      # Check if file exists before trying to read it
+      if ssh -o ConnectTimeout=5 control-plane "test -f $TOKEN_FILE && cat $TOKEN_FILE" 2>/dev/null; then
+        K3S_TOKEN=$(ssh -o ConnectTimeout=5 control-plane "cat $TOKEN_FILE" 2>/dev/null)
+        if [ -n "$K3S_TOKEN" ]; then
+          echo "Got token"
+          break
+        fi
       fi
-      echo "  ...token not available yet, retrying in 5s"
-      sleep 5
+      echo "  ...token not available yet, retrying in $${DELAY}s"
+      sleep "$DELAY"
+      # Exponential backoff with cap
+      DELAY=$((DELAY * 2))
+      if [ "$DELAY" -gt "$MAX_DELAY" ]; then
+        DELAY=$MAX_DELAY
+      fi
     done
 
     if [ -z "$K3S_TOKEN" ]; then
-      echo "ERROR: Failed to fetch k3s token after 5 minutes"
+      echo "ERROR: Failed to fetch k3s token"
       exit 1
     fi
 
+  # Securely delete the SSH key immediately after use
+  - |
+    echo "Securely removing SSH fetch key..."
+    if command -v shred > /dev/null 2>&1; then
+      shred -u /root/.ssh/worker_fetch 2>/dev/null || rm -f /root/.ssh/worker_fetch
+    else
+      rm -f /root/.ssh/worker_fetch
+    fi
+    rm -f /root/.ssh/config
+
   # Get this node's private IP
   - |
-    NODE_IP=$(ip -4 addr show $PRIVATE_IFACE | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
+    NODE_IP=$(ip -4 addr show "$PRIVATE_IFACE" | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
     echo "Node IP: $NODE_IP"
 
   # Install k3s agent
@@ -78,10 +100,7 @@ runcmd:
       --server=https://${control_plane_ip}:6443 \
       --token="$K3S_TOKEN" \
       --kubelet-arg="cloud-provider=external" \
-      --flannel-iface=$PRIVATE_IFACE \
-      --node-ip=$NODE_IP
-
-  # Clean up the fetch key — no longer needed
-  - rm -f /root/.ssh/worker_fetch /root/.ssh/config
+      --flannel-iface="$PRIVATE_IFACE" \
+      --node-ip="$NODE_IP"
 
   - echo "WORKER_READY" > /tmp/worker-ready

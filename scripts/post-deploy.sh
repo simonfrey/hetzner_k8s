@@ -13,10 +13,12 @@
 #   3. Cilium (CNI) — MUST be first, nodes are NotReady without it
 #   4. Hetzner CCM — removes cloud-provider taint
 #   5. Hetzner CSI — enables persistent volumes
-#   6. Traefik — ingress controller (LB name templated from cluster_name)
-#   7. cert-manager — TLS certificates (email templated from letsencrypt_email)
-#   8. Cluster autoscaler — scales workers
-#   9. Monitoring (optional)
+#   6. (wait for nodes)
+#   7. metrics-server — required for HPA CPU/memory targets
+#   8. Traefik — ingress controller (LB name templated from cluster_name)
+#   9. cert-manager — TLS certificates (email templated from letsencrypt_email)
+#  10. Cluster autoscaler — scales workers
+#  11. Monitoring (optional)
 # ============================================================================
 set -euo pipefail
 
@@ -66,6 +68,7 @@ cd "$ROOT_DIR"
 CILIUM_VERSION="1.19.0"
 HCLOUD_CCM_VERSION="1.29.2"
 HCLOUD_CSI_VERSION="2.18.3"
+METRICS_SERVER_VERSION="3.12.2"
 TRAEFIK_VERSION="39.0.0"
 CERT_MANAGER_VERSION="v1.19.3"
 KUBE_PROMETHEUS_VERSION="81.5.0"
@@ -211,7 +214,31 @@ fi
 info "Hetzner CSI installed."
 
 # ============================================================================
-# 7. Install Traefik via Helm
+# 7. Install metrics-server (required for HPA CPU/memory targets)
+# ============================================================================
+
+info "Installing metrics-server..."
+helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/ 2>/dev/null || true
+helm repo update metrics-server
+
+if helm status metrics-server -n kube-system &>/dev/null; then
+  info "metrics-server already installed, upgrading..."
+  helm upgrade metrics-server metrics-server/metrics-server \
+    --namespace kube-system \
+    --version "$METRICS_SERVER_VERSION" \
+    --set args={--kubelet-insecure-tls} \
+    --wait --timeout 5m
+else
+  helm install metrics-server metrics-server/metrics-server \
+    --namespace kube-system \
+    --version "$METRICS_SERVER_VERSION" \
+    --set args={--kubelet-insecure-tls} \
+    --wait --timeout 5m
+fi
+info "metrics-server installed."
+
+# ============================================================================
+# 8. Install Traefik via Helm
 # ============================================================================
 
 info "Installing Traefik..."
@@ -241,7 +268,7 @@ rm -f "$TRAEFIK_VALUES"
 info "Traefik installed."
 
 # ============================================================================
-# 8. Install cert-manager via Helm
+# 9. Install cert-manager via Helm
 # ============================================================================
 
 info "Installing cert-manager..."
@@ -267,7 +294,7 @@ fi
 info "cert-manager installed."
 
 # ============================================================================
-# 9. Wait for cert-manager webhook and apply ClusterIssuers
+# 10. Wait for cert-manager webhook and apply ClusterIssuers
 # ============================================================================
 
 info "Waiting for cert-manager webhook..."
@@ -293,7 +320,7 @@ rm -f "$ISSUER_MANIFEST"
 info "ClusterIssuers applied."
 
 # ============================================================================
-# 10. Set up cluster autoscaler
+# 11. Set up cluster autoscaler
 # ============================================================================
 
 info "Setting up cluster autoscaler..."
@@ -325,7 +352,7 @@ kubectl -n cluster-autoscaler rollout restart deployment cluster-autoscaler
 info "Cluster autoscaler deployed."
 
 # ============================================================================
-# 11. Optionally install monitoring (kube-prometheus-stack)
+# 12. Optionally install monitoring (kube-prometheus-stack)
 # ============================================================================
 
 if [ -z "$INSTALL_MONITORING" ]; then

@@ -35,9 +35,9 @@ variable "server_type" {
 
   validation {
     condition = contains([
-      "cx23", "cx42", "cx52",                               # Shared vCPU (Intel)
+      "cx23", "cx33", "cx43", "cx53",                        # Shared vCPU (Intel)
       "cpx11", "cpx21", "cpx31", "cpx41", "cpx51",          # Shared vCPU (AMD)
-      "ccx13", "ccx23", "ccx23", "ccx43", "ccx53", "ccx63", # Dedicated vCPU
+      "ccx13", "ccx23", "ccx33", "ccx43", "ccx53", "ccx63", # Dedicated vCPU
     ], var.server_type)
     error_message = "server_type must be a valid Hetzner Cloud server type."
   }
@@ -68,7 +68,7 @@ variable "network_zone" {
 variable "talos_version" {
   description = "Talos Linux version (must match the Packer-built image)"
   type        = string
-  default     = "v1.9.5"
+  default     = "v1.12.0"
 }
 
 # ============================================================================
@@ -151,6 +151,20 @@ variable "autoscaler_max_nodes" {
   validation {
     condition     = var.autoscaler_max_nodes >= 1 && var.autoscaler_max_nodes <= 100
     error_message = "autoscaler_max_nodes must be between 1 and 100."
+  }
+}
+
+# ============================================================================
+# Let's Encrypt Configuration
+# ============================================================================
+
+variable "letsencrypt_email" {
+  description = "Email address for Let's Encrypt certificate registration"
+  type        = string
+
+  validation {
+    condition     = can(regex("^[^@]+@[^@]+\\.[^@]+$", var.letsencrypt_email))
+    error_message = "letsencrypt_email must be a valid email address."
   }
 }
 

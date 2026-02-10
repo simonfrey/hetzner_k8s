@@ -70,10 +70,7 @@ output "dns_instructions" {
     | A    | *.k8s  | ${hcloud_load_balancer.ingress.ipv4} |
     | A    | k8s    | ${hcloud_load_balancer.ingress.ipv4} |
 
-    This enables:
-      - https://hello.k8s.simon-frey.com
-      - https://app.k8s.simon-frey.com
-      - etc.
+    Point your wildcard domain to the LB IP for ingress routing.
 
   EOT
 }
@@ -102,6 +99,11 @@ output "worker_machine_config_base64" {
 output "talos_image_id" {
   description = "Hetzner snapshot ID of the Talos image"
   value       = data.hcloud_image.talos.id
+}
+
+output "letsencrypt_email" {
+  description = "Email address for Let's Encrypt certificate registration"
+  value       = var.letsencrypt_email
 }
 
 # ============================================================================

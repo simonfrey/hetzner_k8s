@@ -31,7 +31,7 @@ Internet → *.k8s.simon-frey.com → Hetzner LB → Traefik Ingress → Your Ap
 - **Immutable OS**: Read-only rootfs, no package manager, minimal attack surface
 - **Pod Security Standards**: Restricted policy enforced on demo namespace
 - **Security Contexts**: All workloads run as non-root with dropped capabilities
-- **Firewall**: Explicit allow-list for all ports (no "any" rules)
+- **Firewall**: Explicit allow-list on public interface (Hetzner FW does not filter private network)
 - **RBAC**: Minimal permissions for cluster autoscaler
 - **PV Reclaim Policy**: Retain (prevents accidental data loss)
 
@@ -78,7 +78,7 @@ Build the Talos snapshot once (or when upgrading Talos versions):
 ```bash
 cd packer
 packer init .
-packer build -var "hcloud_token=$(grep -oP 'hcloud_token\s*=\s*"\K[^"]+' ../terraform.tfvars)" .
+packer build -var "hcloud_token=$(sed -n 's/.*hcloud_token\s*=\s*"\([^"]*\)".*/\1/p' ../terraform.tfvars)" .
 cd ..
 ```
 
@@ -261,7 +261,8 @@ talosctl upgrade --image factory.talos.dev/installer/<schematic>:<version> --nod
 | `hcloud_token` | Hetzner Cloud API token | (required) |
 | `cluster_name` | Name prefix for resources | `hetzner-k8s` |
 | `server_type` | Server type for nodes | `cx23` |
-| `talos_version` | Talos Linux version | `v1.9.5` |
+| `talos_version` | Talos Linux version | `v1.12.0` |
+| `letsencrypt_email` | Email for Let's Encrypt certificates | (required) |
 | `wireguard_server_private_key` | WireGuard server private key (sensitive) | (required) |
 | `wireguard_server_public_key` | WireGuard server public key | (required) |
 | `wireguard_client_public_key` | Your WireGuard public key | (required) |

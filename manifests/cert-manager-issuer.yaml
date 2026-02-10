@@ -9,7 +9,7 @@ spec:
   acme:
     # Staging server for testing (no rate limits)
     server: https://acme-staging-v02.api.letsencrypt.org/directory
-    email: admin@simon-frey.com
+    email: __LETSENCRYPT_EMAIL__
     privateKeySecretRef:
       name: letsencrypt-staging-account-key
     solvers:
@@ -25,7 +25,7 @@ spec:
   acme:
     # Production server
     server: https://acme-v02.api.letsencrypt.org/directory
-    email: admin@simon-frey.com
+    email: __LETSENCRYPT_EMAIL__
     privateKeySecretRef:
       name: letsencrypt-prod-account-key
     solvers:

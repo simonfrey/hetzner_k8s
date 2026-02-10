@@ -81,7 +81,12 @@ resource "hcloud_firewall" "cluster" {
     prevent_destroy = false
   }
 
-  # HTTP (via LB)
+  # ============================================================================
+  # Ingress rules (public interface only — Hetzner FW does NOT filter
+  # private network traffic, so internal/10.0.0.0 rules have no effect)
+  # ============================================================================
+
+  # HTTP/HTTPS (defense-in-depth: LB uses private IP, but keep as fallback)
   rule {
     direction   = "in"
     protocol    = "tcp"
@@ -90,7 +95,6 @@ resource "hcloud_firewall" "cluster" {
     description = "HTTP"
   }
 
-  # HTTPS
   rule {
     direction   = "in"
     protocol    = "tcp"
@@ -108,91 +112,7 @@ resource "hcloud_firewall" "cluster" {
     description = "WireGuard VPN"
   }
 
-  # K8s API — ONLY from WireGuard subnet and private network
-  rule {
-    direction   = "in"
-    protocol    = "tcp"
-    port        = "6443"
-    source_ips  = ["10.200.200.0/24", "10.0.0.0/16"]
-    description = "Kubernetes API (WireGuard + internal only)"
-  }
-
-  # Talos API — ONLY from WireGuard subnet and private network
-  rule {
-    direction   = "in"
-    protocol    = "tcp"
-    port        = "50000"
-    source_ips  = ["10.200.200.0/24", "10.0.0.0/16"]
-    description = "Talos API (WireGuard + internal only)"
-  }
-
-  # ============================================================================
-  # Internal cluster traffic (specific ports instead of "any")
-  # ============================================================================
-
-  # Kubelet API
-  rule {
-    direction   = "in"
-    protocol    = "tcp"
-    port        = "10250"
-    source_ips  = ["10.0.0.0/16"]
-    description = "Kubelet API"
-  }
-
-  # etcd (control plane only)
-  rule {
-    direction   = "in"
-    protocol    = "tcp"
-    port        = "2379-2380"
-    source_ips  = ["10.0.0.0/16"]
-    description = "etcd cluster"
-  }
-
-  # VXLAN (Cilium)
-  rule {
-    direction   = "in"
-    protocol    = "udp"
-    port        = "8472"
-    source_ips  = ["10.0.0.0/16"]
-    description = "VXLAN (Cilium)"
-  }
-
-  # NodePort range (for services)
-  rule {
-    direction   = "in"
-    protocol    = "tcp"
-    port        = "30000-32767"
-    source_ips  = ["10.0.0.0/16"]
-    description = "NodePort services"
-  }
-
-  # Metrics server
-  rule {
-    direction   = "in"
-    protocol    = "tcp"
-    port        = "10251-10252"
-    source_ips  = ["10.0.0.0/16"]
-    description = "Kube scheduler/controller metrics"
-  }
-
-  # CoreDNS
-  rule {
-    direction   = "in"
-    protocol    = "tcp"
-    port        = "53"
-    source_ips  = ["10.0.0.0/16"]
-    description = "CoreDNS TCP"
-  }
-
-  rule {
-    direction   = "in"
-    protocol    = "udp"
-    port        = "53"
-    source_ips  = ["10.0.0.0/16"]
-    description = "CoreDNS UDP"
-  }
-
-  # ICMP (PMTUD, ping)
+  # ICMP (required for Path MTU Discovery)
   rule {
     direction   = "in"
     protocol    = "icmp"
@@ -201,7 +121,7 @@ resource "hcloud_firewall" "cluster" {
   }
 
   # ============================================================================
-  # Egress rules (explicit allow)
+  # Egress rules (public interface only)
   # ============================================================================
 
   rule {
@@ -236,7 +156,6 @@ resource "hcloud_firewall" "cluster" {
     description     = "DNS TCP outbound"
   }
 
-  # NTP
   rule {
     direction       = "out"
     protocol        = "udp"
@@ -245,38 +164,11 @@ resource "hcloud_firewall" "cluster" {
     description     = "NTP outbound"
   }
 
-  # ICMP (required for Path MTU Discovery)
   rule {
     direction       = "out"
     protocol        = "icmp"
     destination_ips = ["0.0.0.0/0", "::/0"]
-    description     = "ICMP (required for PMTUD)"
-  }
-
-  # WireGuard VPN outbound (keepalives)
-  rule {
-    direction       = "out"
-    protocol        = "udp"
-    port            = "51820"
-    destination_ips = ["0.0.0.0/0", "::/0"]
-    description     = "WireGuard VPN outbound"
-  }
-
-  # Internal cluster egress
-  rule {
-    direction       = "out"
-    protocol        = "tcp"
-    port            = "any"
-    destination_ips = ["10.0.0.0/16"]
-    description     = "Internal cluster egress TCP"
-  }
-
-  rule {
-    direction       = "out"
-    protocol        = "udp"
-    port            = "any"
-    destination_ips = ["10.0.0.0/16"]
-    description     = "Internal cluster egress UDP"
+    description     = "ICMP outbound (PMTUD)"
   }
 }
 

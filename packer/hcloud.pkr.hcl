@@ -5,7 +5,7 @@
 # Usage:
 #   cd packer
 #   packer init .
-#   packer build -var "hcloud_token=$(grep -oP 'hcloud_token\s*=\s*"\K[^"]+' ../terraform.tfvars)" .
+#   packer build -var "hcloud_token=$(sed -n 's/.*hcloud_token\s*=\s*"\([^"]*\)".*/\1/p' ../terraform.tfvars)" .
 #
 # The resulting snapshot is referenced in Terraform via:
 #   data "hcloud_image" "talos" { with_selector = "os=talos" }

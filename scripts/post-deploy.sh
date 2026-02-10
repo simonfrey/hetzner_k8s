@@ -8,13 +8,15 @@
 #   ./scripts/post-deploy.sh --no-monitoring
 # ============================================================================
 # Talos boots with CNI=none and proxy disabled. This script installs:
-#   1. Cilium (CNI) — MUST be first, nodes are NotReady without it
-#   2. Hetzner CCM — removes cloud-provider taint
-#   3. Hetzner CSI — enables persistent volumes
-#   4. Traefik — ingress controller
-#   5. cert-manager — TLS certificates
-#   6. Cluster autoscaler — scales workers
-#   7. Monitoring (optional)
+#   1. Reads Terraform outputs (cluster_name, letsencrypt_email)
+#   2. Fetches kubeconfig
+#   3. Cilium (CNI) — MUST be first, nodes are NotReady without it
+#   4. Hetzner CCM — removes cloud-provider taint
+#   5. Hetzner CSI — enables persistent volumes
+#   6. Traefik — ingress controller (LB name templated from cluster_name)
+#   7. cert-manager — TLS certificates (email templated from letsencrypt_email)
+#   8. Cluster autoscaler — scales workers
+#   9. Monitoring (optional)
 # ============================================================================
 set -euo pipefail
 
@@ -58,7 +60,28 @@ command -v helm      >/dev/null || die "helm not found in PATH"
 cd "$ROOT_DIR"
 
 # ============================================================================
-# 1. Fetch kubeconfig from Terraform and rewrite API URL to local tunnel
+# Pinned Helm chart versions (for reproducible deploys from zero)
+# ============================================================================
+
+CILIUM_VERSION="1.19.0"
+HCLOUD_CCM_VERSION="1.29.2"
+HCLOUD_CSI_VERSION="2.18.3"
+TRAEFIK_VERSION="39.0.0"
+CERT_MANAGER_VERSION="v1.19.3"
+KUBE_PROMETHEUS_VERSION="81.5.0"
+
+# ============================================================================
+# 1. Read Terraform outputs needed throughout the script
+# ============================================================================
+
+info "Reading Terraform outputs..."
+CLUSTER_NAME="$(terraform output -raw cluster_name 2>/dev/null)" \
+  || die "Failed to read cluster_name from Terraform outputs"
+LETSENCRYPT_EMAIL="$(terraform output -raw letsencrypt_email 2>/dev/null)" \
+  || die "Failed to read letsencrypt_email from Terraform outputs"
+
+# ============================================================================
+# 2. Fetch kubeconfig from Terraform and rewrite API URL to local tunnel
 # ============================================================================
 
 info "Fetching kubeconfig from Terraform outputs..."
@@ -73,7 +96,7 @@ export KUBECONFIG="$KUBECONFIG_PATH"
 info "Kubeconfig saved to $KUBECONFIG_PATH (API via 127.0.0.1:6443 tunnel)"
 
 # ============================================================================
-# 2. Install Cilium (CNI) — MUST be first, nodes are NotReady without it
+# 3. Install Cilium (CNI) — MUST be first, nodes are NotReady without it
 # ============================================================================
 
 info "Installing Cilium CNI..."
@@ -84,6 +107,7 @@ if helm status cilium -n kube-system &>/dev/null; then
   info "Cilium already installed, upgrading..."
   helm upgrade cilium cilium/cilium \
     --namespace kube-system \
+    --version "$CILIUM_VERSION" \
     --set ipam.mode=kubernetes \
     --set k8sServiceHost=localhost \
     --set k8sServicePort=7445 \
@@ -96,6 +120,7 @@ if helm status cilium -n kube-system &>/dev/null; then
 else
   helm install cilium cilium/cilium \
     --namespace kube-system \
+    --version "$CILIUM_VERSION" \
     --set ipam.mode=kubernetes \
     --set k8sServiceHost=localhost \
     --set k8sServicePort=7445 \
@@ -109,7 +134,7 @@ fi
 info "Cilium installed."
 
 # ============================================================================
-# 3. Wait for nodes to be Ready
+# 4. Wait for nodes to be Ready
 # ============================================================================
 
 info "Waiting for nodes to be Ready..."
@@ -126,7 +151,7 @@ kubectl get nodes
 info "Nodes are Ready."
 
 # ============================================================================
-# 4. Install Hetzner Cloud Controller Manager (removes cloud-provider taint)
+# 5. Install Hetzner Cloud Controller Manager (removes cloud-provider taint)
 # ============================================================================
 
 info "Installing Hetzner Cloud Controller Manager..."
@@ -137,6 +162,7 @@ if helm status hcloud-cloud-controller-manager -n kube-system &>/dev/null; then
   info "Hetzner CCM already installed, upgrading..."
   helm upgrade hcloud-cloud-controller-manager hcloud/hcloud-cloud-controller-manager \
     --namespace kube-system \
+    --version "$HCLOUD_CCM_VERSION" \
     --set networking.enabled=true \
     --set networking.clusterCIDR=10.244.0.0/16 \
     --set env.HCLOUD_TOKEN.valueFrom.secretKeyRef.name=hcloud \
@@ -147,6 +173,7 @@ if helm status hcloud-cloud-controller-manager -n kube-system &>/dev/null; then
 else
   helm install hcloud-cloud-controller-manager hcloud/hcloud-cloud-controller-manager \
     --namespace kube-system \
+    --version "$HCLOUD_CCM_VERSION" \
     --set networking.enabled=true \
     --set networking.clusterCIDR=10.244.0.0/16 \
     --set env.HCLOUD_TOKEN.valueFrom.secretKeyRef.name=hcloud \
@@ -158,7 +185,7 @@ fi
 info "Hetzner CCM installed."
 
 # ============================================================================
-# 5. Install Hetzner CSI Driver (enables persistent volumes)
+# 6. Install Hetzner CSI Driver (enables persistent volumes)
 # ============================================================================
 
 info "Installing Hetzner CSI Driver..."
@@ -167,6 +194,7 @@ if helm status hcloud-csi -n kube-system &>/dev/null; then
   info "Hetzner CSI already installed, upgrading..."
   helm upgrade hcloud-csi hcloud/hcloud-csi \
     --namespace kube-system \
+    --version "$HCLOUD_CSI_VERSION" \
     --set storageClasses[0].name=hcloud-volumes \
     --set storageClasses[0].defaultStorageClass=true \
     --set storageClasses[0].reclaimPolicy=Retain \
@@ -174,6 +202,7 @@ if helm status hcloud-csi -n kube-system &>/dev/null; then
 else
   helm install hcloud-csi hcloud/hcloud-csi \
     --namespace kube-system \
+    --version "$HCLOUD_CSI_VERSION" \
     --set storageClasses[0].name=hcloud-volumes \
     --set storageClasses[0].defaultStorageClass=true \
     --set storageClasses[0].reclaimPolicy=Retain \
@@ -182,29 +211,37 @@ fi
 info "Hetzner CSI installed."
 
 # ============================================================================
-# 6. Install Traefik via Helm
+# 7. Install Traefik via Helm
 # ============================================================================
 
 info "Installing Traefik..."
 helm repo add traefik https://traefik.github.io/charts 2>/dev/null || true
 helm repo update traefik
 
+# Template the LB name into traefik values
+TRAEFIK_VALUES=$(mktemp)
+sed "s/__CLUSTER_NAME__/${CLUSTER_NAME}/g" manifests/traefik-values.yaml > "$TRAEFIK_VALUES"
+trap "rm -f $TRAEFIK_VALUES" EXIT
+
 if helm status traefik -n traefik &>/dev/null; then
   info "Traefik already installed, upgrading..."
   helm upgrade traefik traefik/traefik \
     --namespace traefik \
-    -f manifests/traefik-values.yaml \
+    --version "$TRAEFIK_VERSION" \
+    -f "$TRAEFIK_VALUES" \
     --wait --timeout 5m
 else
   helm install traefik traefik/traefik \
     --namespace traefik --create-namespace \
-    -f manifests/traefik-values.yaml \
+    --version "$TRAEFIK_VERSION" \
+    -f "$TRAEFIK_VALUES" \
     --wait --timeout 5m
 fi
+rm -f "$TRAEFIK_VALUES"
 info "Traefik installed."
 
 # ============================================================================
-# 7. Install cert-manager via Helm
+# 8. Install cert-manager via Helm
 # ============================================================================
 
 info "Installing cert-manager..."
@@ -215,12 +252,14 @@ if helm status cert-manager -n cert-manager &>/dev/null; then
   info "cert-manager already installed, upgrading..."
   helm upgrade cert-manager jetstack/cert-manager \
     --namespace cert-manager \
+    --version "$CERT_MANAGER_VERSION" \
     --set crds.enabled=true \
     --set startupapicheck.enabled=false \
     --wait --timeout 10m
 else
   helm install cert-manager jetstack/cert-manager \
     --namespace cert-manager --create-namespace \
+    --version "$CERT_MANAGER_VERSION" \
     --set crds.enabled=true \
     --set startupapicheck.enabled=false \
     --wait --timeout 10m
@@ -228,7 +267,7 @@ fi
 info "cert-manager installed."
 
 # ============================================================================
-# 8. Wait for cert-manager webhook and apply ClusterIssuers
+# 9. Wait for cert-manager webhook and apply ClusterIssuers
 # ============================================================================
 
 info "Waiting for cert-manager webhook..."
@@ -236,8 +275,12 @@ kubectl -n cert-manager rollout status deployment cert-manager-webhook --timeout
 sleep 5  # extra buffer for webhook to register
 
 info "Applying Let's Encrypt ClusterIssuers..."
+# Template the email into cert-manager issuer manifest
+ISSUER_MANIFEST=$(mktemp)
+sed "s/__LETSENCRYPT_EMAIL__/${LETSENCRYPT_EMAIL}/g" manifests/cert-manager-issuer.yaml > "$ISSUER_MANIFEST"
+
 for i in $(seq 1 12); do
-  if kubectl apply -f manifests/cert-manager-issuer.yaml 2>/dev/null; then
+  if kubectl apply -f "$ISSUER_MANIFEST" 2>/dev/null; then
     break
   fi
   if [ "$i" -eq 12 ]; then
@@ -246,10 +289,11 @@ for i in $(seq 1 12); do
   warn "Waiting for cert-manager CRDs to be ready..."
   sleep 5
 done
+rm -f "$ISSUER_MANIFEST"
 info "ClusterIssuers applied."
 
 # ============================================================================
-# 9. Set up cluster autoscaler
+# 10. Set up cluster autoscaler
 # ============================================================================
 
 info "Setting up cluster autoscaler..."
@@ -258,8 +302,6 @@ HCLOUD_TOKEN="$(terraform output -raw hcloud_token 2>/dev/null)" \
   || die "Failed to read hcloud_token from Terraform outputs"
 CLOUD_INIT_B64="$(terraform output -raw worker_machine_config_base64 2>/dev/null)" \
   || die "Failed to read worker_machine_config_base64 from Terraform outputs"
-CLUSTER_NAME="$(terraform output -raw cluster_name 2>/dev/null)" \
-  || die "Failed to read cluster_name from Terraform outputs"
 TALOS_IMAGE_ID="$(terraform output -raw talos_image_id 2>/dev/null)" \
   || die "Failed to read talos_image_id from Terraform outputs"
 
@@ -283,7 +325,7 @@ kubectl -n cluster-autoscaler rollout restart deployment cluster-autoscaler
 info "Cluster autoscaler deployed."
 
 # ============================================================================
-# 10. Optionally install monitoring (kube-prometheus-stack)
+# 11. Optionally install monitoring (kube-prometheus-stack)
 # ============================================================================
 
 if [ -z "$INSTALL_MONITORING" ]; then
@@ -311,12 +353,14 @@ if [ "$INSTALL_MONITORING" = "yes" ]; then
     info "kube-prometheus-stack already installed, upgrading..."
     helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack \
       --namespace monitoring \
+      --version "$KUBE_PROMETHEUS_VERSION" \
       -f manifests/monitoring-values.yaml \
       --set grafana.adminPassword="$GRAFANA_PASSWORD" \
       --wait --timeout 15m
   else
     helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
       --namespace monitoring \
+      --version "$KUBE_PROMETHEUS_VERSION" \
       -f manifests/monitoring-values.yaml \
       --set grafana.adminPassword="$GRAFANA_PASSWORD" \
       --wait --timeout 15m

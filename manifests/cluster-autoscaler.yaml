@@ -151,13 +151,13 @@ spec:
 
       containers:
         - name: cluster-autoscaler
-          image: registry.k8s.io/autoscaling/cluster-autoscaler:v1.29.0
+          image: registry.k8s.io/autoscaling/cluster-autoscaler:v1.35.0
           command:
             - ./cluster-autoscaler
             - --cloud-provider=hetzner
             - --namespace=cluster-autoscaler
-            - --nodes=0:5:cx23:NBG1:workers-nbg1
-            - --nodes=0:5:cx23:HEL1:workers-hel1
+            - --nodes=0:5:cx23:NBG1:workers
+            - --nodes=0:5:cx23:HEL1:workers
             - --scale-down-enabled=true
             - --scale-down-delay-after-add=5m
             - --scale-down-unneeded-time=5m

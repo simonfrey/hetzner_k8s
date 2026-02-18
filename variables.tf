@@ -212,7 +212,7 @@ variable "git_target_revision" {
 }
 
 variable "enable_monitoring" {
-  description = "Deploy kube-prometheus-stack via ArgoCD"
+  description = "Deploy kube-Okay Oprometheus-stack via ArgoCD"
   type        = bool
   default     = false
 }

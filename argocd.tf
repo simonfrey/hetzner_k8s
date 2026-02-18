@@ -354,3 +354,30 @@ resource "helm_release" "argocd_root_app" {
 
   depends_on = [helm_release.argocd]
 }
+
+# ============================================================================
+# G) Copy Windows ISO into PVC
+# ArgoCD creates the PVCs, but the ISO must be copied in before the VM boots.
+# The VM starts with runStrategy: Stopped; the script patches it to Always.
+# ============================================================================
+
+resource "null_resource" "copy_windows_iso" {
+  count      = var.enable_windows_vm ? 1 : 0
+  depends_on = [helm_release.argocd_root_app]
+
+  provisioner "local-exec" {
+    command     = <<-EOF
+      # Write kubeconfig for the copy script
+      echo "$KUBECONFIG_RAW" > .kubeconfig
+      chmod 600 .kubeconfig
+      sed -i 's|server: https://10\.0\.1\.1:6443|server: https://127.0.0.1:6443|g' .kubeconfig
+
+      ./scripts/copy-windows-iso.sh
+    EOF
+    working_dir = path.module
+    interpreter = ["bash", "-c"]
+    environment = {
+      KUBECONFIG_RAW = talos_cluster_kubeconfig.this.kubeconfig_raw
+    }
+  }
+}

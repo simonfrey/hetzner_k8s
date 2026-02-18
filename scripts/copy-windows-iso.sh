@@ -98,7 +98,26 @@ info "Waiting for iso-loader pod to be ready..."
 kubectl wait --for=condition=Ready pod/iso-loader -n windows --timeout=300s
 
 info "Copying Windows ISO into PVC ($(du -h "$ISO_PATH" | cut -f1), this takes several minutes)..."
+
+# Background progress monitor — prints size every 30s so terraform shows activity
+(
+  while true; do
+    sleep 30
+    CURRENT=$(kubectl exec -n windows iso-loader -- stat -c%s /mnt/iso/disk.img 2>/dev/null || echo 0)
+    CURRENT_MB=$((CURRENT / 1024 / 1024))
+    TOTAL_MB=$((ISO_SIZE / 1024 / 1024))
+    if [ "$TOTAL_MB" -gt 0 ]; then
+      PCT=$((CURRENT_MB * 100 / TOTAL_MB))
+      info "Progress: ${CURRENT_MB} / ${TOTAL_MB} MB (${PCT}%)"
+    fi
+  done
+) &
+MONITOR_PID=$!
+
 kubectl cp "$ISO_PATH" windows/iso-loader:/mnt/iso/disk.img
+
+kill $MONITOR_PID 2>/dev/null || true
+wait $MONITOR_PID 2>/dev/null || true
 
 # Verify the copy succeeded
 COPIED_SIZE="$(kubectl exec -n windows iso-loader -- stat -c%s /mnt/iso/disk.img 2>/dev/null || echo 0)"

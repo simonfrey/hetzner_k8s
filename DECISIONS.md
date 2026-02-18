@@ -78,3 +78,21 @@
 **Fix:**
 1. Added `node.cloudprovider.kubernetes.io/uninitialized` toleration to ArgoCD's `global.tolerations` (via `values = [yamlencode(...)]` for clean YAML array syntax with two tolerations)
 2. Added `null_resource.wait_for_coredns` between Cilium and ArgoCD that polls CoreDNS deployment readiness (up to 5 minutes) before allowing ArgoCD install to proceed
+
+## 2026-02-18: Fix KubeVirt operator ArgoCD ComparisonError
+
+**Problem:** The kubevirt-operator ArgoCD Application fails with `ComparisonError: Failed to compare desired state to live state: failed to calculate diff: error calculating structured merge diff: error building typed value from live resource: .status.terminatingReplicas: field not declared in schema`.
+
+**Root cause:** The Application uses `ServerSideApply=true` (needed because the KubeVirt CRD exceeds the `last-applied-configuration` annotation size limit). ArgoCD's client-side structured merge diff tries to build typed values from live resources using the CRD's OpenAPI schema. The KubeVirt operator writes `.status.terminatingReplicas` at runtime, but this field isn't declared in the CRD schema shipped in v1.7.0. The diff fails before it can even compare.
+
+**Fix:** Added `ServerSideDiff=true` to the kubevirt-operator Application's syncOptions. This delegates diff calculation to the Kubernetes API server, which handles unknown/unstructured status fields correctly. This is the recommended complement to `ServerSideApply=true` per ArgoCD docs.
+
+## 2026-02-18: Automate Windows ISO copy in Terraform apply
+
+**Problem:** After the GitOps migration, the Windows VM has `runStrategy: Always` so ArgoCD starts it immediately at sync wave 3 — but the ISO PVC is empty. The ISO copy (`scripts/copy-windows-iso.sh`) was a manual step that's easy to miss. Since the project policy is "terraform destroy and setup from 0", the ISO PVC is always empty after a fresh deploy.
+
+**Fix:**
+1. Added `null_resource.copy_windows_iso` in `argocd.tf` that runs `scripts/copy-windows-iso.sh` after the ArgoCD root application is deployed, gated by `var.enable_windows_vm`. The provisioner writes `.kubeconfig` from `talos_cluster_kubeconfig` (with server address rewritten for the WireGuard tunnel) before invoking the script.
+2. Changed `runStrategy` from `Always` to `Stopped` in `gitops/apps/windows/templates/vm.yaml` so the VM doesn't boot with an empty ISO PVC. The `copy-windows-iso.sh` script already patches it back to `Always` after the ISO is copied (line 122).
+
+This makes `terraform apply` fully self-contained — no manual post-deploy step needed for the Windows ISO.

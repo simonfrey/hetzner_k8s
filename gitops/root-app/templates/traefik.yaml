@@ -1,0 +1,77 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: traefik
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://traefik.github.io/charts
+    chart: traefik
+    targetRevision: "39.0.0"
+    helm:
+      valuesObject:
+        deployment:
+          kind: DaemonSet
+        tolerations:
+          - key: node-role.kubernetes.io/control-plane
+            operator: Exists
+            effect: NoSchedule
+        ports:
+          web:
+            port: 80
+            proxyProtocol:
+              trustedIPs:
+                - 10.0.0.0/8
+                - 127.0.0.1/32
+            forwardedHeaders:
+              trustedIPs:
+                - 10.0.0.0/8
+                - 127.0.0.1/32
+          websecure:
+            port: 443
+            proxyProtocol:
+              trustedIPs:
+                - 10.0.0.0/8
+                - 127.0.0.1/32
+            forwardedHeaders:
+              trustedIPs:
+                - 10.0.0.0/8
+                - 127.0.0.1/32
+        service:
+          annotations:
+            load-balancer.hetzner.cloud/network-zone: eu-central
+            load-balancer.hetzner.cloud/use-private-ip: "true"
+            load-balancer.hetzner.cloud/uses-proxyprotocol: "true"
+            load-balancer.hetzner.cloud/name: {{ .Values.clusterName }}-lb
+        ingressClass:
+          enabled: true
+          isDefaultClass: true
+        logs:
+          access:
+            enabled: true
+            fields:
+              headers:
+                defaultMode: keep
+        providers:
+          kubernetesCRD:
+            allowCrossNamespace: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: traefik
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: windows-iso
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: hcloud-volumes-nbg1
+  resources:
+    requests:
+      storage: 7Gi

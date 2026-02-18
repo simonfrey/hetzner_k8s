@@ -15,6 +15,7 @@ override.tf.json
 # Environment / Secrets
 .env
 .env.*
+.secrets
 *.pem
 *.key
 

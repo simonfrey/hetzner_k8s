@@ -1,0 +1,13 @@
+<user-mapping>
+    <authorize username="admin" password="${guacamole_password_sha256}" encoding="sha256">
+        <connection name="Windows Server 2022">
+            <protocol>rdp</protocol>
+            <param name="hostname">windows-rdp.windows.svc.cluster.local</param>
+            <param name="port">3389</param>
+            <param name="username">Administrator</param>
+            <param name="password">${windows_admin_password}</param>
+            <param name="security">any</param>
+            <param name="ignore-cert">true</param>
+        </connection>
+    </authorize>
+</user-mapping>

@@ -1,0 +1,5 @@
+apiVersion: v2
+name: bootstrap
+description: Deploys the ArgoCD root Application (app-of-apps entry point)
+version: 1.0.0
+type: application

@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hcloud-csi
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-4"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://charts.hetzner.cloud
+    chart: hcloud-csi
+    targetRevision: "2.18.3"
+    helm:
+      valuesObject:
+        storageClasses:
+          - name: hcloud-volumes
+            defaultStorageClass: true
+            reclaimPolicy: Retain
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  {{- include "root-app.syncPolicy" . | nindent 2 }}

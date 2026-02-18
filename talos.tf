@@ -154,6 +154,54 @@ data "talos_machine_configuration" "worker" {
 }
 
 # ============================================================================
+# 4b. KubeVirt Worker Machine Configuration (taint + label)
+# ============================================================================
+
+data "talos_machine_configuration" "kubevirt_worker" {
+  cluster_name     = var.cluster_name
+  machine_type     = "worker"
+  cluster_endpoint = "https://10.0.1.1:6443"
+  machine_secrets  = talos_machine_secrets.this.machine_secrets
+  talos_version    = var.talos_version
+
+  config_patches = [
+    yamlencode({
+      machine = {
+        time = {
+          servers = [
+            "ntp1.hetzner.de"
+            , "ntp2.hetzner.com"
+            , "ntp3.hetzner.net"
+          ]
+        }
+        kubelet = {
+          extraArgs = {
+            register-with-taints = "kubevirt=true:NoSchedule"
+            node-labels          = "kubevirt=true"
+          }
+          nodeIP = {
+            validSubnets = ["10.0.1.0/24"]
+          }
+        }
+      }
+      cluster = {
+        network = {
+          cni = {
+            name = "none"
+          }
+        }
+        proxy = {
+          disabled = true
+        }
+        externalCloudProvider = {
+          enabled = true
+        }
+      }
+    })
+  ]
+}
+
+# ============================================================================
 # 5. Bootstrap (initializes etcd — via WireGuard tunnel)
 # ============================================================================
 

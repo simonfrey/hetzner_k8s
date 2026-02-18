@@ -1,22 +1,5 @@
 # Hetzner Cloud Cluster Autoscaler
-# Applied by scripts/post-deploy.sh after cluster provisioning.
-#
-# The autoscaler secret is created automatically by post-deploy.sh.
-# To create it manually:
-#   kubectl create secret generic hcloud-autoscaler \
-#     --namespace=cluster-autoscaler \
-#     --from-literal=token="YOUR_HCLOUD_TOKEN" \
-#     --from-literal=cloud-init="$(terraform output -raw worker_machine_config_base64)" \
-#     --from-literal=network="hetzner-k8s-network" \
-#     --from-literal=firewall="hetzner-k8s-fw" \
-#     --from-literal=image="$(terraform output -raw talos_image_id)"
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: cluster-autoscaler
-  labels:
-    pod-security.kubernetes.io/enforce: baseline
+# Namespace and secret are created by Terraform
 ---
 apiVersion: v1
 kind: ServiceAccount

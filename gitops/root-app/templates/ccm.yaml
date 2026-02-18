@@ -1,0 +1,35 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hcloud-ccm
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://charts.hetzner.cloud
+    chart: hcloud-cloud-controller-manager
+    targetRevision: "1.29.2"
+    helm:
+      valuesObject:
+        networking:
+          enabled: true
+          clusterCIDR: 10.244.0.0/16
+        env:
+          HCLOUD_TOKEN:
+            valueFrom:
+              secretKeyRef:
+                name: hcloud
+                key: token
+          HCLOUD_NETWORK:
+            valueFrom:
+              secretKeyRef:
+                name: hcloud
+                key: network
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  {{- include "root-app.syncPolicy" . | nindent 2 }}

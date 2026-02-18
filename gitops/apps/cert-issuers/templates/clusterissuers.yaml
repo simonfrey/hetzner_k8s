@@ -1,15 +1,11 @@
-# Let's Encrypt ClusterIssuer with HTTP-01 challenge
-# Each service gets its own certificate automatically via Ingress annotations
----
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
   name: letsencrypt-staging
 spec:
   acme:
-    # Staging server for testing (no rate limits)
     server: https://acme-staging-v02.api.letsencrypt.org/directory
-    email: __LETSENCRYPT_EMAIL__
+    email: {{ .Values.letsencryptEmail }}
     privateKeySecretRef:
       name: letsencrypt-staging-account-key
     solvers:
@@ -23,9 +19,8 @@ metadata:
   name: letsencrypt-prod
 spec:
   acme:
-    # Production server
     server: https://acme-v02.api.letsencrypt.org/directory
-    email: __LETSENCRYPT_EMAIL__
+    email: {{ .Values.letsencryptEmail }}
     privateKeySecretRef:
       name: letsencrypt-prod-account-key
     solvers:

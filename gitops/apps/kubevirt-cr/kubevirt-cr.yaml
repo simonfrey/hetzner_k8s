@@ -1,0 +1,20 @@
+# KubeVirt CR with workload tolerations for dedicated VM node
+---
+apiVersion: kubevirt.io/v1
+kind: KubeVirt
+metadata:
+  name: kubevirt
+  namespace: kubevirt
+spec:
+  configuration:
+    developerConfiguration:
+      useEmulation: true
+  workloads:
+    nodePlacement:
+      nodeSelector:
+        kubevirt: "true"
+      tolerations:
+        - key: kubevirt
+          operator: Equal
+          value: "true"
+          effect: NoSchedule

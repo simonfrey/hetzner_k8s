@@ -1,10 +1,5 @@
 # Helm values for kube-prometheus-stack
 # Tuned for small Hetzner Talos clusters
-#
-# Install with:
-#   helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
-#     --namespace monitoring --create-namespace \
-#     -f manifests/monitoring-values.yaml
 
 # Prometheus configuration
 prometheus:

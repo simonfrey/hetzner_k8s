@@ -1,0 +1,46 @@
+# guacd — the Guacamole proxy daemon
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guacd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: guacd
+  template:
+    metadata:
+      labels:
+        app: guacd
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: guacd
+          image: guacamole/guacd:1.5.5
+          ports:
+            - containerPort: 4822
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: guacd
+spec:
+  selector:
+    app: guacd
+  ports:
+    - name: guacd
+      port: 4822
+      targetPort: 4822

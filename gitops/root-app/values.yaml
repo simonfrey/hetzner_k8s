@@ -1,0 +1,7 @@
+# Values injected by Terraform via the root Application's helm.valuesObject
+clusterName: ""
+letsencryptEmail: ""
+repoURL: ""
+targetRevision: "main"
+enableMonitoring: false
+enableWindows: true

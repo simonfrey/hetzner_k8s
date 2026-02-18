@@ -35,7 +35,7 @@ variable "server_type" {
 
   validation {
     condition = contains([
-      "cx23", "cx33", "cx43", "cx53",                        # Shared vCPU (Intel)
+      "cx23", "cx33", "cx43", "cx53",                       # Shared vCPU (Intel)
       "cpx11", "cpx21", "cpx31", "cpx41", "cpx51",          # Shared vCPU (AMD)
       "ccx13", "ccx23", "ccx33", "ccx43", "ccx53", "ccx63", # Dedicated vCPU
     ], var.server_type)
@@ -176,4 +176,49 @@ variable "initial_worker_count" {
   description = "Number of workers to create initially (0 if using autoscaler)"
   type        = number
   default     = 0
+}
+
+# ============================================================================
+# KubeVirt Configuration
+# ============================================================================
+
+variable "kubevirt_server_type" {
+  description = "Hetzner server type for KubeVirt node (must be CCX for nested virtualization)"
+  type        = string
+  default     = "ccx23" # 4 dedicated vCPU (AMD EPYC), 16GB RAM
+
+  validation {
+    condition = contains([
+      "ccx13", "ccx23", "ccx33", "ccx43", "ccx53", "ccx63",
+    ], var.kubevirt_server_type)
+    error_message = "kubevirt_server_type must be a dedicated vCPU (CCX) Hetzner server type for nested virtualization."
+  }
+}
+
+# ============================================================================
+# GitOps / ArgoCD Configuration
+# ============================================================================
+
+variable "git_repo_url" {
+  description = "Git repository URL for ArgoCD to sync from"
+  type        = string
+  default     = "https://github.com/simonfrey/hetzner_k8s.git"
+}
+
+variable "git_target_revision" {
+  description = "Git branch/tag/commit for ArgoCD to track"
+  type        = string
+  default     = "main"
+}
+
+variable "enable_monitoring" {
+  description = "Deploy kube-prometheus-stack via ArgoCD"
+  type        = bool
+  default     = false
+}
+
+variable "enable_windows_vm" {
+  description = "Deploy Windows VM + Guacamole via ArgoCD"
+  type        = bool
+  default     = true
 }

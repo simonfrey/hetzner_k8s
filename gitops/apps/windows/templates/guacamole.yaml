@@ -1,0 +1,61 @@
+# Guacamole web application
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guacamole
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: guacamole
+  template:
+    metadata:
+      labels:
+        app: guacamole
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: guacamole
+          image: guacamole/guacamole:1.5.5
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              export GUACAMOLE_HOME=/tmp/guacamole-home
+              printf '%s\n' \
+                'guacd-hostname: guacd' \
+                'guacd-port: 4822' \
+                > /tmp/guacamole-home/guacamole.properties
+              cp /etc/guacamole/user-mapping.xml /tmp/guacamole-home/user-mapping.xml
+              cp /opt/guacamole/guacamole.war /usr/local/tomcat/webapps/ROOT.war
+              exec catalina.sh run
+          ports:
+            - containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: user-mapping
+              mountPath: /etc/guacamole/user-mapping.xml
+              subPath: user-mapping.xml
+            - name: guacamole-home
+              mountPath: /tmp/guacamole-home
+            - name: tomcat-webapps
+              mountPath: /usr/local/tomcat/webapps
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+      volumes:
+        - name: user-mapping
+          configMap:
+            name: guacamole-config
+        - name: guacamole-home
+          emptyDir: {}
+        - name: tomcat-webapps
+          emptyDir: {}

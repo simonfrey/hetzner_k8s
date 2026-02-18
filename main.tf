@@ -17,11 +17,39 @@ terraform {
       source  = "hashicorp/null"
       version = ">= 3.2.0, < 4.0.0"
     }
+    helm = {
+      source  = "hashicorp/helm"
+      version = ">= 2.12.0, < 3.0.0"
+    }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = ">= 2.25.0, < 3.0.0"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = ">= 3.6.0, < 4.0.0"
+    }
   }
 }
 
 provider "hcloud" {
   token = var.hcloud_token
+}
+
+provider "helm" {
+  kubernetes {
+    host                   = "https://127.0.0.1:6443"
+    client_certificate     = base64decode(talos_cluster_kubeconfig.this.kubernetes_client_configuration.client_certificate)
+    client_key             = base64decode(talos_cluster_kubeconfig.this.kubernetes_client_configuration.client_key)
+    cluster_ca_certificate = base64decode(talos_cluster_kubeconfig.this.kubernetes_client_configuration.ca_certificate)
+  }
+}
+
+provider "kubernetes" {
+  host                   = "https://127.0.0.1:6443"
+  client_certificate     = base64decode(talos_cluster_kubeconfig.this.kubernetes_client_configuration.client_certificate)
+  client_key             = base64decode(talos_cluster_kubeconfig.this.kubernetes_client_configuration.client_key)
+  cluster_ca_certificate = base64decode(talos_cluster_kubeconfig.this.kubernetes_client_configuration.ca_certificate)
 }
 
 # ============================================================================
@@ -235,6 +263,34 @@ resource "hcloud_server" "worker" {
 }
 
 # ============================================================================
+# KubeVirt Dedicated Worker Node (CCX — nested virtualization)
+# ============================================================================
+
+resource "hcloud_server" "kubevirt_worker" {
+  name         = "${var.cluster_name}-kubevirt-1"
+  image        = data.hcloud_image.talos.id
+  server_type  = var.kubevirt_server_type
+  location     = var.control_plane_location
+  firewall_ids = [hcloud_firewall.cluster.id]
+
+  lifecycle {
+    ignore_changes = [user_data, image]
+  }
+
+  labels = merge(local.common_labels, {
+    role = "kubevirt"
+  })
+
+  network {
+    network_id = hcloud_network.cluster.id
+    ip         = "10.0.1.20"
+  }
+
+  user_data  = data.talos_machine_configuration.kubevirt_worker.machine_configuration
+  depends_on = [hcloud_server.control_plane]
+}
+
+# ============================================================================
 # Load Balancer (routes to all nodes)
 # ============================================================================
 
@@ -247,8 +303,8 @@ resource "hcloud_load_balancer" "ingress" {
 
   lifecycle {
     prevent_destroy = false
-    # CCM manages algorithm, targets, and services once it takes over the LB
-    ignore_changes = [algorithm]
+    # CCM manages algorithm, targets, services, and labels once it takes over the LB
+    ignore_changes = [algorithm, labels]
   }
 }
 

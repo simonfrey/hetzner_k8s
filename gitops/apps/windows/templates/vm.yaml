@@ -1,0 +1,95 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: windows-server-2022
+  labels:
+    app: windows-server-2022
+spec:
+  runStrategy: Always
+  template:
+    metadata:
+      labels:
+        kubevirt.io/domain: windows-server-2022
+    spec:
+      nodeSelector:
+        node.kubernetes.io/instance-type: ccx23
+      tolerations:
+        - key: kubevirt
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      domain:
+        firmware:
+          bootloader:
+            bios: {}
+        cpu:
+          cores: 4
+        resources:
+          requests:
+            memory: 8Gi
+        devices:
+          disks:
+            - name: os-disk
+              disk:
+                bus: virtio
+              bootOrder: 2
+            - name: iso
+              cdrom:
+                bus: scsi
+              bootOrder: 1
+            - name: virtio-drivers
+              cdrom:
+                bus: sata
+            - name: sysprep
+              cdrom:
+                bus: sata
+          interfaces:
+            - name: default
+              masquerade: {}
+              ports:
+                - port: 3389
+                  name: rdp
+        machine:
+          type: q35
+        clock:
+          timer:
+            hpet:
+              present: false
+            hyperv: {}
+            pit:
+              tickPolicy: delay
+            rtc:
+              tickPolicy: catchup
+          utc: {}
+        features:
+          acpi: {}
+          hyperv:
+            frequencies: {}
+            ipi: {}
+            reenlightenment: {}
+            relaxed: {}
+            reset: {}
+            runtime: {}
+            spinlocks:
+              spinlocks: 8191
+            synic: {}
+            tlbflush: {}
+            vapic: {}
+            vpindex: {}
+      networks:
+        - name: default
+          pod: {}
+      volumes:
+        - name: os-disk
+          persistentVolumeClaim:
+            claimName: windows-os-disk
+        - name: iso
+          persistentVolumeClaim:
+            claimName: windows-iso
+        - name: virtio-drivers
+          containerDisk:
+            image: quay.io/kubevirt/virtio-container-disk:v1.7.0
+        - name: sysprep
+          sysprep:
+            configMap:
+              name: windows-sysprep

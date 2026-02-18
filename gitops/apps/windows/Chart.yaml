@@ -1,0 +1,5 @@
+apiVersion: v2
+name: windows
+description: Windows Server 2022 VM + Guacamole browser-based RDP
+version: 1.0.0
+type: application

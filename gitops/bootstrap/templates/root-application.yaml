@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: {{ .Values.targetRevision }}
+    path: gitops/root-app
+    helm:
+      valuesObject:
+        clusterName: {{ .Values.clusterName }}
+        letsencryptEmail: {{ .Values.letsencryptEmail }}
+        repoURL: {{ .Values.repoURL }}
+        targetRevision: {{ .Values.targetRevision }}
+        enableMonitoring: {{ .Values.enableMonitoring }}
+        enableWindows: {{ .Values.enableWindows }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

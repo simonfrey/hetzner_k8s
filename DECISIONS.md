@@ -96,3 +96,27 @@
 2. Changed `runStrategy` from `Always` to `Stopped` in `gitops/apps/windows/templates/vm.yaml` so the VM doesn't boot with an empty ISO PVC. The `copy-windows-iso.sh` script already patches it back to `Always` after the ISO is copied (line 122).
 
 This makes `terraform apply` fully self-contained — no manual post-deploy step needed for the Windows ISO.
+
+## 2026-02-19: Remove background progress monitor from ISO copy script
+
+**Problem:** `copy-windows-iso.sh` gets stuck at ~7% during ISO upload. The background subshell runs `kubectl exec` every 30s to check file size on the pod, which interferes with the concurrent `kubectl cp` SPDY connection to the same pod/container.
+
+**Attempted fix:** Replaced `kubectl cp` with `pv | kubectl exec -i -- cat > file` foreground pipe. Failed — raw stdin piping of ~5GB through `kubectl exec` causes immediate SPDY/WebSocket connection reset ("broken pipe" / "connection reset by peer"). The API server connection isn't designed for large raw binary transfers via exec stdin.
+
+**Fix:** Removed the background progress monitor entirely and kept plain `kubectl cp` (which uses tar internally and handles large file streaming correctly). The transfer itself was never the problem — only the competing `kubectl exec` calls from the background monitor caused the stall.
+
+## 2026-02-20: Flip boot order so Windows boots from disk after installation
+
+**Problem:** After Windows Server 2022 installs successfully and reboots, the VM gets stuck at "Press any key to boot from CD/DVD... No operating system found." SeaBIOS tries the ISO CDROM first (bootOrder: 1) and fails to fall through to the virtio OS disk (bootOrder: 2).
+
+**Fix:** Swapped boot order in `gitops/apps/windows/templates/vm.yaml`: OS disk is now bootOrder: 1, ISO is bootOrder: 2. After installation, the VM boots directly from the hard drive. The ISO remains available as a fallback but is no longer tried first.
+
+## 2026-02-18: Fix invalid KubeVirt RunStrategy "Stopped"
+
+**Problem:** Windows VM shows "Boot failed: Could not read from CDROM (code 0005)". The ISO PVC was empty because the copy script never actually stopped the VM before copying.
+
+**Root cause:** `Stopped` is not a valid KubeVirt RunStrategy — valid values are `Always`, `Halted`, `Manual`, `RerunOnFailure`. The copy script (line 39) used `runStrategy: Stopped` to halt the VM before copying the ISO. The KubeVirt webhook rejected the patch, but `|| true` silenced the error. The VM kept running with QEMU holding the empty PVC file open, so the copied ISO data was never seen by QEMU. Additionally, ArgoCD couldn't sync the VM manifest with `runStrategy: Stopped` (same webhook rejection).
+
+**Fix:**
+1. `gitops/apps/windows/templates/vm.yaml`: Changed `runStrategy` from `Stopped` to `Always` — the desired end state. ArgoCD syncs cleanly; the copy script patches it to `Halted` temporarily then back to `Always`.
+2. `scripts/copy-windows-iso.sh`: Changed the stop patch from `Stopped` to `Halted` (valid KubeVirt value). The flow is now: halt VM → copy ISO → patch back to `Always` → VM restarts with ISO.

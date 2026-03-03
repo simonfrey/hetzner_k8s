@@ -267,6 +267,7 @@ resource "hcloud_server" "worker" {
 # ============================================================================
 
 resource "hcloud_server" "kubevirt_worker" {
+  count        = var.enable_windows_vm ? 1 : 0
   name         = "${var.cluster_name}-kubevirt-1"
   image        = data.hcloud_image.talos.id
   server_type  = var.kubevirt_server_type

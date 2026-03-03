@@ -99,7 +99,43 @@ kubectl wait --for=condition=Ready pod/iso-loader -n windows --timeout=300s
 
 info "Copying Windows ISO into PVC ($(du -h "$ISO_PATH" | cut -f1), this takes several minutes)..."
 
-kubectl cp "$ISO_PATH" windows/iso-loader:/mnt/iso/disk.img
+# Split ISO into 50MB chunks to survive wireproxy tunnel websocket limits
+CHUNK_DIR="$(mktemp -d)"
+CHUNK_SIZE=50M
+trap 'rm -rf "$CHUNK_DIR"' EXIT
+info "Splitting ISO into ${CHUNK_SIZE} chunks..."
+split -b "$CHUNK_SIZE" -d "$ISO_PATH" "$CHUNK_DIR/chunk_"
+
+CHUNK_COUNT=$(ls "$CHUNK_DIR"/chunk_* | wc -l)
+CHUNK_NUM=0
+for CHUNK in "$CHUNK_DIR"/chunk_*; do
+  CHUNK_NUM=$((CHUNK_NUM + 1))
+  CHUNK_NAME="$(basename "$CHUNK")"
+  CHUNK_BYTES="$(stat -c%s "$CHUNK")"
+
+  # Retry each chunk up to 3 times
+  for ATTEMPT in 1 2 3; do
+    info "Copying chunk $CHUNK_NUM/$CHUNK_COUNT ($CHUNK_NAME, attempt $ATTEMPT)..."
+    if kubectl cp "$CHUNK" "windows/iso-loader:/mnt/iso/$CHUNK_NAME" 2>/dev/null; then
+      # Verify chunk size
+      REMOTE_SIZE="$(kubectl exec -n windows iso-loader -- stat -c%s "/mnt/iso/$CHUNK_NAME" 2>/dev/null || echo 0)"
+      if [ "$CHUNK_BYTES" = "$REMOTE_SIZE" ]; then
+        break
+      fi
+      warn "Chunk size mismatch (expected $CHUNK_BYTES, got $REMOTE_SIZE), retrying..."
+    else
+      warn "kubectl cp failed for $CHUNK_NAME, retrying in 5s..."
+    fi
+    sleep 5
+    if [ "$ATTEMPT" -eq 3 ]; then
+      kubectl delete pod iso-loader -n windows --wait=false
+      die "Failed to copy chunk $CHUNK_NAME after 3 attempts"
+    fi
+  done
+done
+
+info "Reassembling ISO from chunks inside pod..."
+kubectl exec -n windows iso-loader -- sh -c 'cat /mnt/iso/chunk_* > /mnt/iso/disk.img && rm -f /mnt/iso/chunk_*'
 
 # Verify the copy succeeded
 COPIED_SIZE="$(kubectl exec -n windows iso-loader -- stat -c%s /mnt/iso/disk.img 2>/dev/null || echo 0)"

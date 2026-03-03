@@ -111,6 +111,10 @@ This makes `terraform apply` fully self-contained — no manual post-deploy step
 
 **Fix:** Swapped boot order in `gitops/apps/windows/templates/vm.yaml`: OS disk is now bootOrder: 1, ISO is bootOrder: 2. After installation, the VM boots directly from the hard drive. The ISO remains available as a fallback but is no longer tried first.
 
+## 2026-02-24: Disable KubeVirt worker node and Windows VM (cost savings)
+
+**Change:** Set `enable_windows_vm` default to `false` and added `count = var.enable_windows_vm ? 1 : 0` to the `hcloud_server.kubevirt_worker` resource. The dedicated CCX instance for KubeVirt is expensive and not currently needed. All Windows VM related resources (namespace, secrets, configmaps, ISO copy) were already gated behind `enable_windows_vm`. To re-enable, set `enable_windows_vm = true` in `terraform.tfvars`.
+
 ## 2026-02-18: Fix invalid KubeVirt RunStrategy "Stopped"
 
 **Problem:** Windows VM shows "Boot failed: Could not read from CDROM (code 0005)". The ISO PVC was empty because the copy script never actually stopped the VM before copying.

@@ -220,5 +220,5 @@ variable "enable_monitoring" {
 variable "enable_windows_vm" {
   description = "Deploy Windows VM + Guacamole via ArgoCD"
   type        = bool
-  default     = true
+  default     = false
 }

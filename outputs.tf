@@ -24,7 +24,7 @@ output "worker_public_ips" {
 
 output "kubevirt_worker_public_ip" {
   description = "Public IPv4 of the KubeVirt worker node"
-  value       = hcloud_server.kubevirt_worker.ipv4_address
+  value       = var.enable_windows_vm ? hcloud_server.kubevirt_worker[0].ipv4_address : null
 }
 
 # ============================================================================

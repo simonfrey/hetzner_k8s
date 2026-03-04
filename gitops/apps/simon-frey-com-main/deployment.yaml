@@ -54,6 +54,7 @@ spec:
             - --root=/srv/site
             - --link=current
             - --period=60s
+            - --stale-worktree-timeout=120s
             - --ssh-key-file=/etc/git-secret/ssh
             - --ssh-known-hosts=false
           volumeMounts:

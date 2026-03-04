@@ -77,4 +77,4 @@ spec:
         - name: git-ssh
           secret:
             secretName: git-sync-ssh
-            defaultMode: 0400
+            defaultMode: 0444

@@ -351,8 +351,119 @@ resource "helm_release" "argocd_root_app" {
     name  = "enableWindows"
     value = tostring(var.enable_windows_vm)
   }
+  set {
+    name  = "enableWebsite"
+    value = tostring(var.enable_website)
+  }
 
   depends_on = [helm_release.argocd]
+}
+
+# ============================================================================
+# H) simon-frey.com website — SSH deploy key + secrets
+# ============================================================================
+
+# SSH keypair for ArgoCD to access the private simonfrey/simon-frey.com repo
+resource "tls_private_key" "website_deploy_key" {
+  count     = var.enable_website ? 1 : 0
+  algorithm = "ED25519"
+}
+
+# ArgoCD repo credential — tells ArgoCD how to clone the private repo
+resource "kubernetes_secret" "argocd_repo_website" {
+  count = var.enable_website ? 1 : 0
+
+  metadata {
+    name      = "argocd-repo-simon-frey-com"
+    namespace = "argocd"
+    labels = {
+      "argocd.argoproj.io/secret-type" = "repository"
+    }
+  }
+
+  data = {
+    type          = "git"
+    url           = "git@github.com:simonfrey/simon-frey.com.git"
+    sshPrivateKey = tls_private_key.website_deploy_key[0].private_key_openssh
+  }
+
+  depends_on = [helm_release.argocd]
+}
+
+# --- simon-frey-com namespace and secrets ---
+
+resource "kubernetes_namespace" "simon_frey_com" {
+  count = var.enable_website ? 1 : 0
+
+  metadata {
+    name = "simon-frey-com"
+  }
+
+  depends_on = [helm_release.cilium]
+}
+
+# WordPress MySQL passwords
+resource "random_password" "mysql_root" {
+  count   = var.enable_website ? 1 : 0
+  length  = 24
+  special = false
+}
+
+resource "random_password" "wordpress_db" {
+  count   = var.enable_website ? 1 : 0
+  length  = 24
+  special = false
+}
+
+resource "kubernetes_secret" "wordpress_db_credentials" {
+  count = var.enable_website ? 1 : 0
+
+  metadata {
+    name      = "wordpress-db-credentials"
+    namespace = kubernetes_namespace.simon_frey_com[0].metadata[0].name
+  }
+
+  data = {
+    mysql-root-password = random_password.mysql_root[0].result
+    mysql-password      = random_password.wordpress_db[0].result
+    mysql-database      = "wordpress"
+    mysql-user          = "wordpress"
+  }
+}
+
+# MinIO credentials
+resource "random_password" "minio_root" {
+  count   = var.enable_website ? 1 : 0
+  length  = 24
+  special = false
+}
+
+resource "kubernetes_secret" "minio_credentials" {
+  count = var.enable_website ? 1 : 0
+
+  metadata {
+    name      = "minio-credentials"
+    namespace = kubernetes_namespace.simon_frey_com[0].metadata[0].name
+  }
+
+  data = {
+    root-user     = "admin"
+    root-password = random_password.minio_root[0].result
+  }
+}
+
+# SSH private key secret for git-sync sidecar in the main site pod
+resource "kubernetes_secret" "website_git_sync_ssh" {
+  count = var.enable_website ? 1 : 0
+
+  metadata {
+    name      = "git-sync-ssh"
+    namespace = kubernetes_namespace.simon_frey_com[0].metadata[0].name
+  }
+
+  data = {
+    ssh = tls_private_key.website_deploy_key[0].private_key_openssh
+  }
 }
 
 # ============================================================================

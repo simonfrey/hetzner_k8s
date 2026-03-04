@@ -1,0 +1,62 @@
+{{- if .Values.enableWebsite }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: simon-frey-com-main
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: {{ .Values.targetRevision }}
+    path: gitops/apps/simon-frey-com-main
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: simon-frey-com
+  {{- include "root-app.syncPolicy" . | nindent 2 }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: simon-frey-com-blog
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: {{ .Values.targetRevision }}
+    path: gitops/apps/simon-frey-com-blog
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: simon-frey-com
+  {{- include "root-app.syncPolicy" . | nindent 2 }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: simon-frey-com-files
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: {{ .Values.targetRevision }}
+    path: gitops/apps/simon-frey-com-files
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: simon-frey-com
+  {{- include "root-app.syncPolicy" . | nindent 2 }}
+{{- end }}

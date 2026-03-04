@@ -222,3 +222,9 @@ variable "enable_windows_vm" {
   type        = bool
   default     = false
 }
+
+variable "enable_website" {
+  description = "Deploy simon-frey.com website (main site + WordPress blog + MinIO files)"
+  type        = bool
+  default     = false
+}

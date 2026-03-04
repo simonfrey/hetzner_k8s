@@ -102,6 +102,23 @@ output "grafana_password" {
   sensitive   = true
 }
 
+output "website_deploy_key_public" {
+  description = "SSH public key to add as GitHub deploy key on simonfrey/simon-frey.com"
+  value       = var.enable_website ? tls_private_key.website_deploy_key[0].public_key_openssh : null
+}
+
+output "minio_root_password" {
+  description = "MinIO root password"
+  value       = var.enable_website ? random_password.minio_root[0].result : null
+  sensitive   = true
+}
+
+output "wordpress_db_password" {
+  description = "WordPress database password"
+  value       = var.enable_website ? random_password.wordpress_db[0].result : null
+  sensitive   = true
+}
+
 output "argocd_initial_admin_password" {
   description = "Command to retrieve ArgoCD initial admin password"
   value       = "kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d"

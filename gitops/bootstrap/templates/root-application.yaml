@@ -17,6 +17,7 @@ spec:
         targetRevision: {{ .Values.targetRevision }}
         enableMonitoring: {{ .Values.enableMonitoring }}
         enableWindows: {{ .Values.enableWindows }}
+        enableWebsite: {{ .Values.enableWebsite }}
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd

@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: simon-frey-com-main
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: simon-frey-com-main
+  template:
+    metadata:
+      labels:
+        app: simon-frey-com-main
+    spec:
+      initContainers:
+        - name: git-sync-init
+          image: registry.k8s.io/git-sync/git-sync:v4.4.0
+          args:
+            - --repo=git@github.com:simonfrey/simon-frey.com.git
+            - --root=/srv/site
+            - --link=current
+            - --one-time
+            - --ssh-key-file=/etc/git-secret/ssh
+            - --ssh-known-hosts=false
+          volumeMounts:
+            - name: site-content
+              mountPath: /srv/site
+            - name: git-ssh
+              mountPath: /etc/git-secret
+              readOnly: true
+          securityContext:
+            runAsUser: 65533
+      containers:
+        - name: apache-php
+          image: php:8.2-apache
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: site-content
+              mountPath: /var/www/html
+              subPath: current
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+        - name: git-sync
+          image: registry.k8s.io/git-sync/git-sync:v4.4.0
+          args:
+            - --repo=git@github.com:simonfrey/simon-frey.com.git
+            - --root=/srv/site
+            - --link=current
+            - --period=60s
+            - --ssh-key-file=/etc/git-secret/ssh
+            - --ssh-known-hosts=false
+          volumeMounts:
+            - name: site-content
+              mountPath: /srv/site
+            - name: git-ssh
+              mountPath: /etc/git-secret
+              readOnly: true
+          securityContext:
+            runAsUser: 65533
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+      volumes:
+        - name: site-content
+          emptyDir: {}
+        - name: git-ssh
+          secret:
+            secretName: git-sync-ssh
+            defaultMode: 0400

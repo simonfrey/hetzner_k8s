@@ -75,3 +75,6 @@ Terraform creates `kubernetes_secret` and `kubernetes_config_map` resources. Arg
 
 All decisions you or your users make should be documented in the git repository. This includes any changes to the infrastructure, any issues encountered, and how they were resolved. T
 Write decisions in chronological order with a date into the DECISIONS.md.
+
+### Secrecy
+Make sure that you never commit any secrets to the git, as I am publishing this repo to the general internet and the people should not get access to my services

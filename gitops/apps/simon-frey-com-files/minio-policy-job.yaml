@@ -1,0 +1,39 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-create-public-bucket
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: minio/mc:latest
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: root-user
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: root-password
+          command:
+            - /bin/sh
+            - -c
+            - |
+              # Wait for MinIO to be ready
+              until mc alias set local http://minio-api:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"; do
+                echo "Waiting for MinIO..."
+                sleep 5
+              done
+              # Create public bucket if it doesn't exist
+              mc mb --ignore-existing local/public
+              # Set anonymous download policy
+              mc anonymous set download local/public
+              echo "Public bucket created with anonymous read access"

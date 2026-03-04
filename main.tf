@@ -198,6 +198,14 @@ resource "hcloud_firewall" "cluster" {
 
   rule {
     direction       = "out"
+    protocol        = "tcp"
+    port            = "22"
+    destination_ips = ["0.0.0.0/0", "::/0"]
+    description     = "SSH outbound (git-sync to GitHub)"
+  }
+
+  rule {
+    direction       = "out"
     protocol        = "icmp"
     destination_ips = ["0.0.0.0/0", "::/0"]
     description     = "ICMP outbound (PMTUD)"

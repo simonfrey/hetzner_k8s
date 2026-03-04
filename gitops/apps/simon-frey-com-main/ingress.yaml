@@ -28,8 +28,10 @@ spec:
   tls:
     - hosts:
         - simon-frey.com
-        - files-admin.simon-frey.com
       secretName: simon-frey-com-tls
+    - hosts:
+        - files-admin.simon-frey.com
+      secretName: files-admin-simon-frey-com-tls
   rules:
     - host: simon-frey.com
       http:

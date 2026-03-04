@@ -33,6 +33,7 @@ spec:
       containers:
         - name: apache-php
           image: php:8.2-apache
+          command: ["/bin/bash", "-c", "a2enmod headers rewrite && apache2-foreground"]
           ports:
             - containerPort: 80
           volumeMounts:

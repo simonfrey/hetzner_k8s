@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wordpress-apache-config
+data:
+  blog-alias.conf: |
+    Alias /blog /var/www/html
+    <Directory /var/www/html>
+      AllowOverride All
+      Require all granted
+    </Directory>

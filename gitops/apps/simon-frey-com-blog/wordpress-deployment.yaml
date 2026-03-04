@@ -48,6 +48,9 @@ spec:
           volumeMounts:
             - name: wordpress-content
               mountPath: /var/www/html/wp-content
+            - name: apache-config
+              mountPath: /etc/apache2/conf-enabled/blog-alias.conf
+              subPath: blog-alias.conf
           resources:
             requests:
               cpu: 100m
@@ -59,3 +62,6 @@ spec:
         - name: wordpress-content
           persistentVolumeClaim:
             claimName: wordpress-content
+        - name: apache-config
+          configMap:
+            name: wordpress-apache-config

@@ -11,19 +11,37 @@ spec:
       useEmulation: true
   infra:
     nodePlacement:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubevirt
+                operator: In
+                values:
+                - "true"
       nodeSelector:
         kubevirt: "true"
       tolerations:
-        - key: kubevirt
-          operator: Equal
-          value: "true"
-          effect: NoSchedule
+      - key: kubevirt
+        operator: Equal
+        value: "true"
+        effect: NoSchedule
   workloads:
     nodePlacement:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubevirt
+                operator: In
+                values:
+                - "true"
       nodeSelector:
         kubevirt: "true"
       tolerations:
-        - key: kubevirt
-          operator: Equal
-          value: "true"
-          effect: NoSchedule
+      - key: kubevirt
+        operator: Equal
+        value: "true"
+        effect: NoSchedule

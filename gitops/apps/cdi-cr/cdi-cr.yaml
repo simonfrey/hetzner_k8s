@@ -9,10 +9,38 @@ spec:
     - WebhookPvcRendering
   imagePullPolicy: IfNotPresent
   infra:
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: kubevirt
+              operator: In
+              values:
+              - "true"
     nodeSelector:
       kubernetes.io/os: linux
       kubevirt: "true"
+    tolerations:
+    - key: kubevirt
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
   workload:
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: kubevirt
+              operator: In
+              values:
+              - "true"
     nodeSelector:
       kubernetes.io/os: linux
       kubevirt: "true"
+    tolerations:
+    - key: kubevirt
+      operator: Equal
+      value: "true"
+      effect: NoSchedule

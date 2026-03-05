@@ -286,6 +286,43 @@ resource "kubernetes_config_map" "guacamole_config" {
   }
 }
 
+# --- kwatch ---
+
+resource "kubernetes_namespace" "kwatch" {
+  metadata {
+    name = "kwatch"
+  }
+
+  depends_on = [helm_release.cilium]
+}
+
+resource "kubernetes_config_map" "kwatch" {
+  metadata {
+    name      = "kwatch"
+    namespace = kubernetes_namespace.kwatch.metadata[0].name
+  }
+
+  data = {
+    "config.yaml" = yamlencode({
+      maxRecentLogLines              = 20
+      ignoreFailedGracefulShutdown   = true
+      pvcMonitor = {
+        enabled   = true
+        interval  = 15
+        threshold = 80
+      }
+      nodeMonitor = {
+        enabled = true
+      }
+      alert = {
+        webhook = {
+          url = var.pushover_webhook_url
+        }
+      }
+    })
+  }
+}
+
 # --- monitoring ---
 
 resource "kubernetes_namespace" "monitoring" {

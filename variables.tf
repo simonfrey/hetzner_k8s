@@ -228,3 +228,13 @@ variable "enable_website" {
   type        = bool
   default     = false
 }
+
+# ============================================================================
+# kwatch Configuration
+# ============================================================================
+
+variable "pushover_webhook_url" {
+  description = "Pushover webhook URL for kwatch notifications"
+  type        = string
+  sensitive   = true
+}

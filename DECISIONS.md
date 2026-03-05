@@ -157,6 +157,21 @@ This makes `terraform apply` fully self-contained — no manual post-deploy step
 - `gitops/apps/autoscaler/cluster-autoscaler.yaml`: Reduced memory requests from 300Mi to 128Mi (limit 256Mi) so pod fits on cp-1 (cx23, 4GB RAM at 97% utilization).
 - `gitops/apps/kubevirt-cr/kubevirt-cr.yaml`: Added `infra.nodePlacement` with `kubevirt=true` nodeSelector so KubeVirt infrastructure pods (virt-operator, virt-api, virt-controller ~685Mi) only run on dedicated kubevirt nodes, freeing memory on cp-1.
 
+## 2026-03-05: Add kwatch for cluster monitoring with Pushover notifications
+
+**Decision:** Deploy kwatch (v0.10.3) to monitor all namespaces, PVCs, and nodes. Notifications go to Pushover via their native webhook feature (no adapter needed).
+
+**Architecture:**
+- kwatch sends JSON payloads to a Pushover webhook URL
+- Pushover extracts notification title/body using JSON selectors configured in the Pushover dashboard
+- The webhook URL (contains secret token) is stored in a Terraform-managed ConfigMap, never committed to git
+
+**Files created:**
+- `gitops/apps/kwatch/` — namespace, RBAC, deployment manifests (no secrets)
+- `gitops/root-app/templates/kwatch.yaml` — ArgoCD Application (sync-wave 5)
+- `argocd.tf` — namespace + ConfigMap with webhook URL from `var.pushover_webhook_url`
+- `variables.tf` — `pushover_webhook_url` variable (sensitive)
+
 ## 2026-03-05: Taint control-plane node to restrict scheduling
 
 **Problem:** cp-1 (cx22, 4GB RAM) has no taint, so all pods — including application workloads (WordPress, MySQL, MinIO, simon-frey.com) — schedule there, causing memory pressure.

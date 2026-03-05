@@ -275,11 +275,25 @@ kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80
 
 ## ArgoCD UI
 
+The K8s API is only reachable through the WireGuard tunnel. If wireproxy isn't running (e.g. after a reboot), start it first:
+
 ```bash
+# Start wireproxy tunnel
+bash setup_wireproxy.sh
+```
+
+Then port-forward ArgoCD and open the UI:
+
+```bash
+export KUBECONFIG=$(pwd)/.kubeconfig
+
+# Port-forward ArgoCD
 kubectl -n argocd port-forward svc/argocd-server 8080:80
+
 # Open http://localhost:8080
 # Username: admin
-# Password: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d
+# Password:
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d
 ```
 
 ## Retrieving Passwords

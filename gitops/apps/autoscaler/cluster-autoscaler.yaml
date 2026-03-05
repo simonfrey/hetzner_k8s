@@ -126,15 +126,9 @@ spec:
           operator: Exists
           effect: NoSchedule
 
-      # Prefer running on control plane
-      affinity:
-        nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              preference:
-                matchExpressions:
-                  - key: node-role.kubernetes.io/control-plane
-                    operator: Exists
+      # Only run on control plane nodes
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
 
       # Pod-level security context
       securityContext:

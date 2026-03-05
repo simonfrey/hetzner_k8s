@@ -10,13 +10,12 @@ spec:
       storage: 5Gi
 ---
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: mysql
 spec:
+  serviceName: mysql
   replicas: 1
-  strategy:
-    type: Recreate
   selector:
     matchLabels:
       app: mysql

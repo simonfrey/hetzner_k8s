@@ -29,5 +29,17 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
-  {{- include "root-app.syncPolicy" . | nindent 2 }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - ServerSideDiff=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
 {{- end }}

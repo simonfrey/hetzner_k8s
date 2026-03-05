@@ -40,14 +40,14 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: simon-frey-com-blog
+                name: nginx-cache
                 port:
                   number: 80
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: simon-frey-com-main
+                name: nginx-cache
                 port:
                   number: 80
     - host: files-admin.simon-frey.com

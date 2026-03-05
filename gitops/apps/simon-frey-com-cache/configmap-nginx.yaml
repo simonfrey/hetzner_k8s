@@ -1,0 +1,64 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-cache-config
+data:
+  nginx.conf: |
+    worker_processes auto;
+    events {
+        worker_connections 1024;
+    }
+    http {
+        proxy_cache_path /var/cache/nginx levels=1:2 keys_zone=site_cache:10m max_size=1g inactive=24h use_temp_path=off;
+
+        map $request_uri $cache_bypass_uri {
+            default 0;
+            ~^/blog/wp-admin 1;
+            ~^/blog/wp-login\.php 1;
+        }
+
+        map $http_cookie $cache_bypass_cookie {
+            default 0;
+            ~wordpress_logged_in 1;
+        }
+
+        map $cache_bypass_uri$cache_bypass_cookie $no_cache {
+            default 0;
+            ~1 1;
+        }
+
+        upstream main {
+            server simon-frey-com-main:80;
+        }
+
+        upstream blog {
+            server simon-frey-com-blog:80;
+        }
+
+        server {
+            listen 80;
+
+            proxy_cache site_cache;
+            proxy_cache_valid 200 60s;
+            proxy_cache_use_stale updating;
+            proxy_cache_background_update on;
+            proxy_cache_lock on;
+            proxy_cache_bypass $no_cache;
+            proxy_no_cache $no_cache;
+
+            add_header X-Cache-Status $upstream_cache_status always;
+
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            location /blog {
+                proxy_pass http://blog;
+            }
+
+            location / {
+                proxy_pass http://main;
+            }
+        }
+    }

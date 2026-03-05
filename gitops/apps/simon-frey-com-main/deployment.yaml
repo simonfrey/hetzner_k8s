@@ -57,6 +57,8 @@ spec:
             - --stale-worktree-timeout=120s
             - --ssh-key-file=/etc/git-secret/ssh
             - --ssh-known-hosts=false
+            - --webhook-url=http://nginx-cache.simon-frey-com.svc:8080/purge
+            - --webhook-method=POST
           volumeMounts:
             - name: site-content
               mountPath: /srv/site

@@ -45,6 +45,11 @@ rules:
     resources: ["namespaces", "pods", "services", "replicationcontrollers", "persistentvolumeclaims", "persistentvolumes"]
     verbs: ["watch", "list", "get"]
 
+  # ConfigMaps (status reporting)
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create", "get", "update", "delete"]
+
   # Jobs and CronJobs
   - apiGroups: ["batch"]
     resources: ["jobs", "cronjobs"]

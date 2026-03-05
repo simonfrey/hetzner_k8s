@@ -156,3 +156,20 @@ This makes `terraform apply` fully self-contained — no manual post-deploy step
 - `terraform.tfvars`: Changed `initial_worker_count` from 2 to 0 so the autoscaler fully manages worker lifecycle.
 - `gitops/apps/autoscaler/cluster-autoscaler.yaml`: Reduced memory requests from 300Mi to 128Mi (limit 256Mi) so pod fits on cp-1 (cx23, 4GB RAM at 97% utilization).
 - `gitops/apps/kubevirt-cr/kubevirt-cr.yaml`: Added `infra.nodePlacement` with `kubevirt=true` nodeSelector so KubeVirt infrastructure pods (virt-operator, virt-api, virt-controller ~685Mi) only run on dedicated kubevirt nodes, freeing memory on cp-1.
+
+## 2026-03-05: Taint control-plane node to restrict scheduling
+
+**Problem:** cp-1 (cx22, 4GB RAM) has no taint, so all pods — including application workloads (WordPress, MySQL, MinIO, simon-frey.com) — schedule there, causing memory pressure.
+
+**Decision:** Taint cp-1 with `node-role.kubernetes.io/control-plane:NoSchedule` so only infrastructure services with explicit tolerations run there. Application pods become Pending until the cluster autoscaler provisions worker nodes.
+
+**Changes:**
+- `talos.tf`: Set `allowSchedulingOnControlPlanes = false` (Talos applies the standard control-plane taint)
+- `gitops/root-app/templates/ccm.yaml`: Added control-plane + cloud-provider-uninitialized tolerations
+- `gitops/root-app/templates/csi.yaml`: Added control-plane tolerations for controller and node components
+- `gitops/root-app/templates/cert-manager.yaml`: Added control-plane tolerations for main, cainjector, and webhook
+- `gitops/root-app/templates/metrics-server.yaml`: Added control-plane toleration
+
+**Already configured (no changes needed):** ArgoCD (global.tolerations in argocd.tf), Traefik (traefik.yaml), cluster autoscaler (cluster-autoscaler.yaml), Cilium (DaemonSet tolerates all), CoreDNS (system component), KubeVirt/CDI (restricted to kubevirt=true nodes).
+
+**Deployment order:** Sync ArgoCD apps first (tolerations), then apply taint (or let Terraform update Talos config).

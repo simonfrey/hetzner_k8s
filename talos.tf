@@ -85,8 +85,8 @@ data "talos_machine_configuration" "controlplane" {
         externalCloudProvider = {
           enabled = true
         }
-        # Allow workloads on control plane (workers can scale to 0)
-        allowSchedulingOnControlPlanes = true
+        # Control plane is tainted NoSchedule; only infra pods with tolerations run here
+        allowSchedulingOnControlPlanes = false
         # Advertise etcd on private network
         etcd = {
           advertisedSubnets = ["10.0.1.0/24"]

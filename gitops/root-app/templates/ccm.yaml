@@ -18,6 +18,13 @@ spec:
         networking:
           enabled: true
           clusterCIDR: 10.244.0.0/16
+        tolerations:
+          - key: node-role.kubernetes.io/control-plane
+            operator: Exists
+            effect: NoSchedule
+          - key: node.cloudprovider.kubernetes.io/uninitialized
+            operator: Exists
+            effect: NoSchedule
         env:
           HCLOUD_TOKEN:
             valueFrom:

@@ -17,6 +17,9 @@ spec:
       containers:
         - name: kwatch
           image: ghcr.io/abahmed/kwatch:v0.10.3
+          env:
+            - name: CONFIG_FILE
+              value: /config/config.yaml
           resources:
             limits:
               cpu: 100m

@@ -51,7 +51,31 @@ grafana:
 
 # Alertmanager configuration
 alertmanager:
+  config:
+    route:
+      receiver: pushover
+      group_by: ['alertname', 'namespace']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      routes:
+        - receiver: "null"
+          matchers:
+            - alertname = "Watchdog"
+        - receiver: "null"
+          matchers:
+            - alertname = "InfoInhibitor"
+    receivers:
+      - name: "null"
+      - name: pushover
+        pushover_configs:
+          - user_key_file: /etc/alertmanager/secrets/alertmanager-pushover/user-key
+            token_file: /etc/alertmanager/secrets/alertmanager-pushover/api-token
+            priority: '{{ if eq .Status "firing" }}0{{ else }}-1{{ end }}'
+            title: '{{ .Status | toUpper }}: {{ .CommonLabels.alertname }}'
   alertmanagerSpec:
+    secrets:
+      - alertmanager-pushover
     resources:
       requests:
         cpu: 10m

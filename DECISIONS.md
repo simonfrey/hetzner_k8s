@@ -188,3 +188,25 @@ This makes `terraform apply` fully self-contained — no manual post-deploy step
 **Already configured (no changes needed):** ArgoCD (global.tolerations in argocd.tf), Traefik (traefik.yaml), cluster autoscaler (cluster-autoscaler.yaml), Cilium (DaemonSet tolerates all), CoreDNS (system component), KubeVirt/CDI (restricted to kubevirt=true nodes).
 
 **Deployment order:** Sync ArgoCD apps first (tolerations), then apply taint (or let Terraform update Talos config).
+
+## 2026-03-05: Add Prometheus Alertmanager with Pushover notifications
+
+**Problem:** Alertmanager is deployed via kube-prometheus-stack but has no receivers configured — all ~100 default PrometheusRules (KubeNodeNotReady, KubePodCrashLooping, etc.) fire but go nowhere.
+
+**Decision:** Configure Alertmanager's native pushover receiver to send notifications via Pushover. Credentials stored in a Terraform-managed Kubernetes secret, mounted into Alertmanager via `alertmanagerSpec.secrets`.
+
+**Changes:**
+- `variables.tf`: Added `pushover_user_key` and `pushover_api_token` variables (sensitive)
+- `argocd.tf`: Added `kubernetes_secret.alertmanager_pushover` (gated by `enable_monitoring`)
+- `gitops/apps/monitoring/values.yaml`: Added Alertmanager config with pushover receiver, null receiver for Watchdog/InfoInhibitor, and secret mount
+- Credentials use `user_key_file`/`token_file` (file-based) so secrets never appear in the Alertmanager config YAML
+
+## 2026-03-05: Gate KubeVirt and CDI behind enableWindows flag
+
+**Problem:** KubeVirt and CDI pods are stuck Running on cp-1 despite nodePlacement changes (commit `6c1cba3`). The operators created new ReplicaSets with `kubevirt: "true"` nodeSelector, but new pods can't schedule (no kubevirt nodes exist when `enable_windows_vm=false`), so old pods on cp-1 are never terminated (rolling update deadlock).
+
+**Root cause:** The 4 ArgoCD apps (kubevirt-operator, kubevirt-cr, cdi-operator, cdi-cr) are always deployed regardless of `enableWindows`. Only the windows VM app was gated. Additionally, virt-operator had `kubevirt: "true"` nodeSelector, preventing it from running on the control plane where it needs to be to manage KubeVirt CRs.
+
+**Changes:**
+- `gitops/root-app/templates/{kubevirt-operator,kubevirt-cr,cdi-operator,cdi-cr}.yaml`: Wrapped in `{{- if .Values.enableWindows }}` / `{{- end }}`, matching the existing pattern in `windows.yaml`. When `enableWindows=false`, ArgoCD prunes these Applications and their child resources.
+- `gitops/apps/kubevirt-operator/kubevirt-operator.yaml`: Reverted virt-operator Deployment nodeSelector to just `kubernetes.io/os: linux` (removed `kubevirt: "true"`). Added control-plane and master tolerations so the operator can schedule on cp-1. Kept kubevirt toleration for when dedicated nodes exist.

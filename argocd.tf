@@ -291,6 +291,9 @@ resource "kubernetes_config_map" "guacamole_config" {
 resource "kubernetes_namespace" "kwatch" {
   metadata {
     name = "kwatch"
+    labels = {
+      "argocd.argoproj.io/instance" = "kwatch"
+    }
   }
 
   depends_on = [helm_release.cilium]
@@ -349,6 +352,20 @@ resource "kubernetes_secret" "grafana_admin" {
   data = {
     admin-user     = "admin"
     admin-password = random_password.grafana.result
+  }
+}
+
+resource "kubernetes_secret" "alertmanager_pushover" {
+  count = var.enable_monitoring ? 1 : 0
+
+  metadata {
+    name      = "alertmanager-pushover"
+    namespace = kubernetes_namespace.monitoring[0].metadata[0].name
+  }
+
+  data = {
+    user-key  = var.pushover_user_key
+    api-token = var.pushover_api_token
   }
 }
 

@@ -238,3 +238,15 @@ variable "pushover_webhook_url" {
   type        = string
   sensitive   = true
 }
+
+variable "pushover_user_key" {
+  description = "Pushover user/group key for Alertmanager notifications"
+  type        = string
+  sensitive   = true
+}
+
+variable "pushover_api_token" {
+  description = "Pushover application API token for Alertmanager notifications"
+  type        = string
+  sensitive   = true
+}

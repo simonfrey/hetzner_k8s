@@ -266,11 +266,21 @@ terraform apply
 
 ArgoCD will deploy kube-prometheus-stack automatically.
 
-Access Grafana via port-forward:
+Access Grafana via port-forward (requires wireproxy tunnel running):
 
 ```bash
+# Start wireproxy tunnel if not already running
+bash setup_wireproxy.sh
+
+export KUBECONFIG=$(pwd)/.kubeconfig
+
+# Port-forward Grafana
 kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80
-# Password: terraform output -raw grafana_password
+
+# Open http://localhost:3000
+# Username: admin
+# Password:
+terraform output -raw grafana_password
 ```
 
 ## ArgoCD UI

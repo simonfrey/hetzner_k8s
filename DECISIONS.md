@@ -141,3 +141,18 @@ This makes `terraform apply` fully self-contained — no manual post-deploy step
 **Fix:**
 1. `gitops/apps/windows/templates/vm.yaml`: Changed `runStrategy` from `Stopped` to `Always` — the desired end state. ArgoCD syncs cleanly; the copy script patches it to `Halted` temporarily then back to `Always`.
 2. `scripts/copy-windows-iso.sh`: Changed the stop patch from `Stopped` to `Halted` (valid KubeVirt value). The flow is now: halt VM → copy ISO → patch back to `Always` → VM restarts with ISO.
+
+## 2026-03-05: Fix cluster autoscaler RBAC and worker management
+
+**Problem:** Cluster autoscaler (v1.35.0) is completely broken — stuck in infinite RBAC error retry loops, never entering the main scaling loop. Zero scaling decisions are made.
+
+**Root causes:**
+1. **Missing RBAC permissions** — ClusterRole lacked `resource.k8s.io` (resourceclaims, resourceslices, deviceclasses, resourceclaimtemplates) and `storage.k8s.io/volumeattachments`, required by autoscaler v1.35.0. The informer watches fail immediately, preventing initialization.
+2. **Terraform-managed static workers conflict with autoscaler** — `initial_worker_count = 2` creates 2 permanent workers via Terraform that the autoscaler can't scale down (would cause state drift).
+3. **Location case mismatch** — `--nodes` flags used `NBG1`/`HEL1` (uppercase) but Hetzner API uses lowercase `nbg1`/`hel1`.
+
+**Changes:**
+- `gitops/apps/autoscaler/cluster-autoscaler.yaml`: Added RBAC rules for `resource.k8s.io` and `storage.k8s.io/volumeattachments`. Fixed location names to lowercase.
+- `terraform.tfvars`: Changed `initial_worker_count` from 2 to 0 so the autoscaler fully manages worker lifecycle.
+- `gitops/apps/autoscaler/cluster-autoscaler.yaml`: Reduced memory requests from 300Mi to 128Mi (limit 256Mi) so pod fits on cp-1 (cx23, 4GB RAM at 97% utilization).
+- `gitops/apps/kubevirt-cr/kubevirt-cr.yaml`: Added `infra.nodePlacement` with `kubevirt=true` nodeSelector so KubeVirt infrastructure pods (virt-operator, virt-api, virt-controller ~685Mi) only run on dedicated kubevirt nodes, freeing memory on cp-1.

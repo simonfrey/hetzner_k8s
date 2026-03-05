@@ -9,6 +9,15 @@ spec:
   configuration:
     developerConfiguration:
       useEmulation: true
+  infra:
+    nodePlacement:
+      nodeSelector:
+        kubevirt: "true"
+      tolerations:
+        - key: kubevirt
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
   workloads:
     nodePlacement:
       nodeSelector:

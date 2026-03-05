@@ -11,6 +11,8 @@ spec:
   infra:
     nodeSelector:
       kubernetes.io/os: linux
+      kubevirt: "true"
   workload:
     nodeSelector:
       kubernetes.io/os: linux
+      kubevirt: "true"

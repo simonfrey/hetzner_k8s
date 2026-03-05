@@ -5804,6 +5804,7 @@ spec:
         terminationMessagePolicy: FallbackToLogsOnError
       nodeSelector:
         kubernetes.io/os: linux
+        kubevirt: "true"
       securityContext:
         runAsNonRoot: true
       serviceAccountName: cdi-operator

@@ -8237,21 +8237,6 @@ spec:
       name: virt-operator
     spec:
       affinity:
-        nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - preference:
-              matchExpressions:
-              - key: node-role.kubernetes.io/worker
-                operator: DoesNotExist
-            weight: 100
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              - key: node-role.kubernetes.io/control-plane
-                operator: Exists
-            - matchExpressions:
-              - key: node-role.kubernetes.io/master
-                operator: Exists
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
           - podAffinityTerm:
@@ -8324,6 +8309,7 @@ spec:
           name: profile-data
       nodeSelector:
         kubernetes.io/os: linux
+        kubevirt: "true"
       priorityClassName: kubevirt-cluster-critical
       securityContext:
         runAsNonRoot: true

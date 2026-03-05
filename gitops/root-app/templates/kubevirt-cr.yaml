@@ -1,3 +1,4 @@
+{{- if .Values.enableWindows }}
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -17,3 +18,4 @@ spec:
     server: https://kubernetes.default.svc
     namespace: kubevirt
   {{- include "root-app.syncPolicy" . | nindent 2 }}
+{{- end }}

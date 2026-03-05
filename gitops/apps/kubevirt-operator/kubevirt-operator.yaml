@@ -8309,7 +8309,6 @@ spec:
           name: profile-data
       nodeSelector:
         kubernetes.io/os: linux
-        kubevirt: "true"
       priorityClassName: kubevirt-cluster-critical
       securityContext:
         runAsNonRoot: true
@@ -8319,6 +8318,12 @@ spec:
       tolerations:
       - key: CriticalAddonsOnly
         operator: Exists
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
       - key: kubevirt
         operator: Equal
         value: "true"

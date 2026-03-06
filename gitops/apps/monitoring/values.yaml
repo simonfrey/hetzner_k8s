@@ -1,9 +1,17 @@
-# Helm values for kube-prometheus-stack
+# Helm values for victoria-metrics-k8s-stack
 # Tuned for small Hetzner Talos clusters
 
-# Prometheus configuration
-prometheus:
-  prometheusSpec:
+# VictoriaMetrics Single (replaces Prometheus)
+vmsingle:
+  spec:
+    retentionPeriod: "7d"
+    storage:
+      storageClassName: hcloud-volumes
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
     resources:
       requests:
         cpu: 100m
@@ -11,22 +19,85 @@ prometheus:
       limits:
         cpu: 500m
         memory: 1Gi
-    retention: 7d
-    storageSpec:
-      volumeClaimTemplate:
-        spec:
-          storageClassName: hcloud-volumes
-          accessModes:
-            - ReadWriteOnce
-          resources:
-            requests:
-              storage: 10Gi
     tolerations:
       - key: node-role.kubernetes.io/control-plane
         operator: Exists
         effect: NoSchedule
 
-# Grafana configuration
+# VMAgent (scrapes metrics, sends to VMSingle)
+vmagent:
+  spec:
+    selectAllByDefault: true
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+
+# VMAlert (evaluates rules, sends to VMAlertmanager)
+vmalert:
+  spec:
+    selectAllByDefault: true
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+
+# VMAlertmanager (routes alerts to Pushover)
+alertmanager:
+  enabled: true
+  spec:
+    selectAllByDefault: true
+    secrets:
+      - alertmanager-pushover
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+  config:
+    route:
+      receiver: pushover
+      group_by: ['alertname', 'namespace']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      routes:
+        - receiver: "null"
+          matchers:
+            - alertname = "Watchdog"
+        - receiver: "null"
+          matchers:
+            - alertname = "InfoInhibitor"
+    receivers:
+      - name: "null"
+      - name: pushover
+        pushover_configs:
+          - user_key_file: /etc/vm/secrets/alertmanager-pushover/user-key
+            token_file: /etc/vm/secrets/alertmanager-pushover/api-token
+            priority: '{{ if eq .Status "firing" }}0{{ else }}-1{{ end }}'
+            title: '{{ .Status | toUpper }}: {{ .CommonLabels.alertname }}'
+
+# Grafana (datasource auto-pointed to VMSingle)
 grafana:
   enabled: true
   persistence:
@@ -49,59 +120,8 @@ grafana:
   ingress:
     enabled: false
 
-# Alertmanager configuration
-alertmanager:
-  config:
-    route:
-      receiver: pushover
-      group_by: ['alertname', 'namespace']
-      group_wait: 30s
-      group_interval: 5m
-      repeat_interval: 4h
-      routes:
-        - receiver: "null"
-          matchers:
-            - alertname = "Watchdog"
-        - receiver: "null"
-          matchers:
-            - alertname = "InfoInhibitor"
-    receivers:
-      - name: "null"
-      - name: pushover
-        pushover_configs:
-          - user_key_file: /etc/alertmanager/secrets/alertmanager-pushover/user-key
-            token_file: /etc/alertmanager/secrets/alertmanager-pushover/api-token
-            priority: '{{ if eq .Status "firing" }}0{{ else }}-1{{ end }}'
-            title: '{{ .Status | toUpper }}: {{ .CommonLabels.alertname }}'
-  alertmanagerSpec:
-    secrets:
-      - alertmanager-pushover
-    resources:
-      requests:
-        cpu: 10m
-        memory: 32Mi
-      limits:
-        cpu: 100m
-        memory: 64Mi
-    tolerations:
-      - key: node-role.kubernetes.io/control-plane
-        operator: Exists
-        effect: NoSchedule
-
-# Node exporter (runs on all nodes)
-nodeExporter:
-  enabled: true
-  tolerations:
-    - key: node-role.kubernetes.io/control-plane
-      operator: Exists
-      effect: NoSchedule
-
-# kube-state-metrics
-kubeStateMetrics:
-  enabled: true
-
-# Prometheus Operator
-prometheusOperator:
+# VM Operator
+victoria-metrics-operator:
   resources:
     requests:
       cpu: 50m
@@ -114,12 +134,28 @@ prometheusOperator:
       operator: Exists
       effect: NoSchedule
 
-# Disable components not easily scrapeable on Talos
+# Node exporter (runs on all nodes)
+prometheus-node-exporter:
+  enabled: true
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+
+# kube-state-metrics
+kube-state-metrics:
+  enabled: true
+
+# Disable Talos-incompatible components
 kubeEtcd:
-  enabled: false  # Talos etcd requires mTLS for metrics
+  enabled: false
 kubeScheduler:
-  enabled: false  # Talos binds to localhost
+  enabled: false
 kubeControllerManager:
-  enabled: false  # Talos binds to localhost
+  enabled: false
 kubeProxy:
-  enabled: false  # Cilium replaces kube-proxy
+  enabled: false
+
+# Default recording/alerting rules
+defaultRules:
+  create: true

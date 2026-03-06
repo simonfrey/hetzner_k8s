@@ -223,6 +223,23 @@ This makes `terraform apply` fully self-contained — no manual post-deploy step
 - `gitops/root-app/templates/traefik.yaml`: Added `ServerSideApply=true` to inline syncOptions
 - Already had SSA: monitoring.yaml, kubevirt-operator.yaml, cdi-operator.yaml
 
+## 2026-03-06: Migrate from Prometheus to VictoriaMetrics
+
+**Problem:** kube-prometheus-stack works but VictoriaMetrics is more resource-efficient for small clusters — lower memory/CPU usage for the same functionality.
+
+**Decision:** Replace `kube-prometheus-stack` with `victoria-metrics-k8s-stack` Helm chart. The VM operator auto-converts Prometheus CRDs (ServiceMonitor→VMServiceScrape, PrometheusRule→VMRule), so existing scrape targets from other apps carry over without changes.
+
+**Changes:**
+- `gitops/root-app/templates/monitoring.yaml`: Changed Helm repo to `victoriametrics.github.io/helm-charts`, chart to `victoria-metrics-k8s-stack` v0.72.4
+- `gitops/apps/monitoring/values.yaml`: Rewritten for VM stack structure — vmsingle (replaces Prometheus), vmagent, vmalert, alertmanager (same Pushover config), grafana (datasource auto-pointed to VMSingle), vm-operator, node-exporter, kube-state-metrics
+- No Terraform changes — `alertmanager-pushover` and `grafana-admin` secrets stay the same
+- Alertmanager secret mount path changed from `/etc/alertmanager/secrets/` to `/etc/vm/secrets/` (VMAlertmanager convention)
+
+**Trade-offs:**
+- No historical metric data migration — VictoriaMetrics starts fresh (7-day retention means full coverage within a week)
+- VM operator auto-converts any existing ServiceMonitor/PodMonitor CRDs, so nothing else in the cluster needs changing
+- Old Prometheus resources are fully pruned by ArgoCD (prune: true)
+
 ## 2026-03-06: Replace kubectl cp ISO loading with CDI DataVolume HTTP import
 
 **Problem:** Windows Server ISO was loaded via a 165-line bash script (`scripts/copy-windows-iso.sh`) that halts the VM, creates a temp pod, chunks the ISO into 50MB pieces, `kubectl cp`s them with retries, reassembles, and restarts the VM. This complex script was orchestrated by a Terraform `null_resource` provisioner, creating a dependency outside GitOps.

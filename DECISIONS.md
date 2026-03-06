@@ -277,3 +277,13 @@ This makes `terraform apply` fully self-contained — no manual post-deploy step
 - `CLAUDE.md`: Updated ISO loading documentation
 - VM spec unchanged — `persistentVolumeClaim.claimName: windows-iso` works with DataVolume-created PVC
 - KubeVirt automatically waits for DataVolume import to complete before starting the VM
+
+## 2026-03-06: Move cert-manager and metrics-server off control plane
+
+**Problem:** CP node (cx33) is overloaded — kube-apiserver, scheduler, and controller-manager crash repeatedly. Every non-essential pod on CP adds to memory/CPU pressure.
+
+**Decision:** Remove control-plane tolerations from cert-manager and metrics-server. Both can run on worker nodes — cert-manager is sync-wave -1 (workers exist by then, CCM is -5) and metrics-server is sync-wave -3 (only needs a kubelet endpoint). Kept CSI controller toleration despite it being a Deployment, because CSI is sync-wave -4 and during bootstrap the only node may be CP.
+
+**Changes:**
+- `gitops/root-app/templates/cert-manager.yaml`: Removed tolerations from main, cainjector, and webhook
+- `gitops/root-app/templates/metrics-server.yaml`: Removed tolerations block

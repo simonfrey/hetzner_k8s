@@ -219,7 +219,7 @@ resource "hcloud_firewall" "cluster" {
 resource "hcloud_server" "control_plane" {
   name         = "${var.cluster_name}-cp-1"
   image        = data.hcloud_image.talos.id
-  server_type  = var.server_type
+  server_type  = var.cp_server_type
   location     = var.control_plane_location
   firewall_ids = [hcloud_firewall.cluster.id]
 

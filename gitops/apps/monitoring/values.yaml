@@ -19,10 +19,6 @@ vmsingle:
       limits:
         cpu: 500m
         memory: 1Gi
-    tolerations:
-      - key: node-role.kubernetes.io/control-plane
-        operator: Exists
-        effect: NoSchedule
 
 # VMAgent (scrapes metrics, sends to VMSingle)
 vmagent:
@@ -32,10 +28,6 @@ vmagent:
       requests:
         cpu: 50m
         memory: 64Mi
-    tolerations:
-      - key: node-role.kubernetes.io/control-plane
-        operator: Exists
-        effect: NoSchedule
 
 # VMAlert (evaluates rules, sends to VMAlertmanager)
 vmalert:
@@ -48,10 +40,6 @@ vmalert:
       limits:
         cpu: 200m
         memory: 256Mi
-    tolerations:
-      - key: node-role.kubernetes.io/control-plane
-        operator: Exists
-        effect: NoSchedule
 
 # VMAlertmanager (routes alerts to Pushover)
 alertmanager:
@@ -67,10 +55,6 @@ alertmanager:
       limits:
         cpu: 100m
         memory: 64Mi
-    tolerations:
-      - key: node-role.kubernetes.io/control-plane
-        operator: Exists
-        effect: NoSchedule
   config:
     route:
       receiver: pushover
@@ -108,10 +92,6 @@ grafana:
     limits:
       cpu: 200m
       memory: 256Mi
-  tolerations:
-    - key: node-role.kubernetes.io/control-plane
-      operator: Exists
-      effect: NoSchedule
   defaultDashboardsEnabled: true
   defaultDashboardsTimezone: utc
   ingress:
@@ -126,10 +106,6 @@ victoria-metrics-operator:
     limits:
       cpu: 200m
       memory: 256Mi
-  tolerations:
-    - key: node-role.kubernetes.io/control-plane
-      operator: Exists
-      effect: NoSchedule
 
 # Node exporter (runs on all nodes)
 prometheus-node-exporter:

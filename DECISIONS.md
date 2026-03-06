@@ -211,6 +211,19 @@ This makes `terraform apply` fully self-contained — no manual post-deploy step
 - `gitops/root-app/templates/{kubevirt-operator,kubevirt-cr,cdi-operator,cdi-cr}.yaml`: Wrapped in `{{- if .Values.enableWindows }}` / `{{- end }}`, matching the existing pattern in `windows.yaml`. When `enableWindows=false`, ArgoCD prunes these Applications and their child resources.
 - `gitops/apps/kubevirt-operator/kubevirt-operator.yaml`: Reverted virt-operator Deployment nodeSelector to just `kubernetes.io/os: linux` (removed `kubevirt: "true"`). Added control-plane and master tolerations so the operator can schedule on cp-1. Kept kubevirt toleration for when dedicated nodes exist.
 
+## 2026-03-06: Fix worker NotReady — upgrade CP to cx33, add PDBs, move monitoring off CP
+
+**Problem:** Worker node goes NotReady every ~30 min. Root cause: control plane (cx23, 2vCPU/4GB) is overloaded — kube-apiserver has 56 restarts, controller-manager 82, scheduler 81 in 15 days. When API server crashes, kubelet can't heartbeat → NotReady → website down.
+
+**Changes (staged for zero website downtime):**
+
+1. **PodDisruptionBudgets** for all website components (simon-frey-com-main, nginx-cache, wordpress, mysql) with `minAvailable: 1` — prevents autoscaler/drain from killing all pods simultaneously
+2. **Autoscaler min nodes 0→1** — ensures at least one worker always exists
+3. **Monitoring moved off control plane** — removed control-plane tolerations from vmsingle, vmagent, vmalert, alertmanager, grafana, VM operator (kept for node-exporter DaemonSet). Frees ~1.5GB RAM on CP
+4. **Autoscaler skip-system-pods=true** — prevents autoscaler from draining nodes with system pods
+5. **Worker nodes upgraded cx23→cx33** — autoscaler node groups changed to cx33 (more headroom for workloads)
+6. **Control plane upgraded cx23→cx33** (8GB RAM) — new `cp_server_type` variable separates CP sizing from worker sizing. Requires `terraform apply` (CP recreation, ~2-3 min API downtime, website stays up via autonomous kubelet)
+
 ## 2026-03-06: Enable ServerSideApply globally for all ArgoCD apps
 
 **Problem:** The monitoring ArgoCD app sync failed permanently (exhausted 5 retries) because 6 large prometheus-operator CRDs exceed the 262144-byte `kubectl.kubernetes.io/last-applied-configuration` annotation limit. Without these CRDs, no Prometheus or Alertmanager pods are created.

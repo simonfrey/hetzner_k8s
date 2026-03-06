@@ -1,0 +1,9 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: simon-frey-com-cache
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: nginx-cache

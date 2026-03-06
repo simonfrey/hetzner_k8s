@@ -29,7 +29,7 @@ variable "cluster_name" {
 # ============================================================================
 
 variable "server_type" {
-  description = "Hetzner server type for all nodes"
+  description = "Hetzner server type for worker nodes"
   type        = string
   default     = "cx23" # 2 vCPU, 4GB RAM
 
@@ -40,6 +40,21 @@ variable "server_type" {
       "ccx13", "ccx23", "ccx33", "ccx43", "ccx53", "ccx63", # Dedicated vCPU
     ], var.server_type)
     error_message = "server_type must be a valid Hetzner Cloud server type."
+  }
+}
+
+variable "cp_server_type" {
+  description = "Hetzner server type for control plane node"
+  type        = string
+  default     = "cx33" # 2 vCPU, 8GB RAM
+
+  validation {
+    condition = contains([
+      "cx23", "cx33", "cx43", "cx53",                       # Shared vCPU (Intel)
+      "cpx11", "cpx21", "cpx31", "cpx41", "cpx51",          # Shared vCPU (AMD)
+      "ccx13", "ccx23", "ccx33", "ccx43", "ccx53", "ccx63", # Dedicated vCPU
+    ], var.cp_server_type)
+    error_message = "cp_server_type must be a valid Hetzner Cloud server type."
   }
 }
 
@@ -135,7 +150,7 @@ variable "wireguard_client_ip" {
 variable "autoscaler_min_nodes" {
   description = "Minimum number of worker nodes (can be 0)"
   type        = number
-  default     = 0
+  default     = 1
 
   validation {
     condition     = var.autoscaler_min_nodes >= 0

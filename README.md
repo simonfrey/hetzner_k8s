@@ -23,7 +23,7 @@ Internet → *.k8s.simon-frey.com → Hetzner LB → Traefik Ingress → Your Ap
 | Auto-scaling | Cluster Autoscaler (0-5 workers) |
 | VPN Access | wireproxy (userspace WireGuard, K8s + Talos API restricted to VPN) |
 | Virtualization | KubeVirt + CDI (Windows Server 2022 via browser RDP) |
-| Monitoring | kube-prometheus-stack (Prometheus + Grafana, optional) |
+| Monitoring | victoria-metrics-k8s-stack (VictoriaMetrics + Grafana, optional) |
 
 ### What Terraform manages (bootstrap)
 
@@ -205,7 +205,7 @@ hetzner-k8s/
 │       ├── cdi-cr/                 # CDI custom resource
 │       ├── windows/                # Windows VM + Guacamole Helm chart
 │       ├── autoscaler/             # Cluster autoscaler RBAC + deployment
-│       └── monitoring/             # kube-prometheus-stack values
+│       └── monitoring/             # victoria-metrics-k8s-stack values
 ├── packer/
 │   └── hcloud.pkr.hcl             # Build Talos image snapshot on Hetzner
 ├── scripts/
@@ -264,7 +264,7 @@ enable_monitoring = true
 terraform apply
 ```
 
-ArgoCD will deploy kube-prometheus-stack automatically.
+ArgoCD will deploy victoria-metrics-k8s-stack automatically (VictoriaMetrics replaces Prometheus with lower resource usage).
 
 Access Grafana via port-forward (requires wireproxy tunnel running):
 
@@ -275,7 +275,7 @@ bash setup_wireproxy.sh
 export KUBECONFIG=$(pwd)/.kubeconfig
 
 # Port-forward Grafana
-kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80
+kubectl -n monitoring port-forward svc/vmstack-grafana 3000:80
 
 # Open http://localhost:3000
 # Username: admin
@@ -408,7 +408,7 @@ talosctl upgrade --image factory.talos.dev/installer/<schematic>:<version> --nod
 | `autoscaler_max_nodes` | Maximum workers | `5` |
 | `git_repo_url` | Git repo URL for ArgoCD | `https://github.com/simon-frey/hetzner_cloud_k8s.git` |
 | `git_target_revision` | Git branch/tag for ArgoCD | `main` |
-| `enable_monitoring` | Deploy kube-prometheus-stack | `false` |
+| `enable_monitoring` | Deploy victoria-metrics-k8s-stack | `false` |
 | `enable_windows_vm` | Deploy Windows VM + Guacamole | `true` |
 
 See `variables.tf` for all options.

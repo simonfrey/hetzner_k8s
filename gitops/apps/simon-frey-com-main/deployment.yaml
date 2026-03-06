@@ -20,6 +20,7 @@ spec:
             - --root=/srv/site
             - --link=current
             - --one-time
+            - --max-failures=5
             - --ssh-key-file=/etc/git-secret/ssh
             - --ssh-known-hosts=false
           volumeMounts:
@@ -56,6 +57,7 @@ spec:
             - --ssh-known-hosts=false
             - --webhook-url=http://nginx-cache.simon-frey-com.svc:8080/purge
             - --webhook-method=POST
+            - --max-failures=5
           volumeMounts:
             - name: site-content
               mountPath: /srv/site

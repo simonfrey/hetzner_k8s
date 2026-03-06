@@ -1,0 +1,15 @@
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: windows-iso
+spec:
+  storage:
+    accessModes:
+      - ReadWriteOnce
+    storageClassName: hcloud-volumes-nbg1
+    resources:
+      requests:
+        storage: 7Gi
+  source:
+    http:
+      url: "https://software-static.download.prss.microsoft.com/sg/download/888969d5-f34g-4e03-ac9d-1f9786c66749/SERVER_EVAL_x64FRE_de-de.iso"

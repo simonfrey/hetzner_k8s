@@ -37,9 +37,9 @@ VMs MUST use BIOS boot (SeaBIOS), not UEFI (OVMF). OVMF cannot boot SATA CDROMs 
 
 ISO CDROMs MUST use `bus: scsi` (virtio-scsi), not `bus: sata`. The AHCI/SATA controller under QEMU TCG causes I/O timeouts (error 0xc00000e9) on large sequential reads like `boot.wim`. Virtio-scsi is paravirtualized and bypasses AHCI entirely. SeaBIOS includes a built-in virtio-scsi driver for booting. The `vioscsi` Windows driver paths must be included in autounattend.xml so WinPE can access the CDROM after boot. Small CDROMs (virtio-drivers, sysprep) can remain on SATA.
 
-### ISO loading via kubectl cp
+### ISO loading via CDI DataVolume
 
-Do NOT use CDI `virtctl image-upload` for ISO files. CDI converts/resizes ISOs during upload, corrupting the ISO 9660 structure. Instead, use `kubectl cp` to copy the ISO byte-for-byte into the PVC as `disk.img`.
+ISOs are loaded via CDI DataVolumes with HTTP source (see `gitops/apps/windows/templates/datavolume-iso.yaml`). Do NOT use `virtctl image-upload` — it corrupts ISOs by converting/resizing them. HTTP import is a different code path that treats ISOs as raw images (no conversion).
 
 ## ArgoCD GitOps
 

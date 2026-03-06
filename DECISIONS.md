@@ -222,3 +222,20 @@ This makes `terraform apply` fully self-contained — no manual post-deploy step
 - `gitops/root-app/templates/cert-manager.yaml`: Added `ServerSideApply=true` to inline syncOptions
 - `gitops/root-app/templates/traefik.yaml`: Added `ServerSideApply=true` to inline syncOptions
 - Already had SSA: monitoring.yaml, kubevirt-operator.yaml, cdi-operator.yaml
+
+## 2026-03-06: Replace kubectl cp ISO loading with CDI DataVolume HTTP import
+
+**Problem:** Windows Server ISO was loaded via a 165-line bash script (`scripts/copy-windows-iso.sh`) that halts the VM, creates a temp pod, chunks the ISO into 50MB pieces, `kubectl cp`s them with retries, reassembles, and restarts the VM. This complex script was orchestrated by a Terraform `null_resource` provisioner, creating a dependency outside GitOps.
+
+**Root cause analysis:** The original CDI rejection (2026-02-13) was due to `virtctl image-upload` corruption. That tool uses CDI's upload proxy which applies conversion/resize logic. HTTP import via DataVolume is a different code path — CDI downloads the file directly and treats ISOs as raw images (ISO 9660 is already raw, so no conversion occurs).
+
+**Decision:** Replace kubectl cp workflow with a CDI DataVolume using `source.http.url` pointing directly to Microsoft's Windows Server 2022 evaluation ISO download URL.
+
+**Changes:**
+- `gitops/apps/windows/templates/datavolume-iso.yaml` (new): CDI DataVolume with HTTP source, 7Gi storage, storageClass `hcloud-volumes-nbg1`
+- `gitops/apps/windows/templates/pvc-iso.yaml` (deleted): Replaced by DataVolume which auto-creates a PVC with the same name
+- `argocd.tf`: Removed `null_resource.copy_windows_iso` block
+- `scripts/copy-windows-iso.sh` (deleted): No longer needed
+- `CLAUDE.md`: Updated ISO loading documentation
+- VM spec unchanged — `persistentVolumeClaim.claimName: windows-iso` works with DataVolume-created PVC
+- KubeVirt automatically waits for DataVolume import to complete before starting the VM

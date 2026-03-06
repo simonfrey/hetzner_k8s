@@ -1,5 +1,13 @@
 # Decisions
 
+## 2026-03-06: Remove CPU limit on vmagent to fix CPUThrottlingHigh alert
+
+**Problem:** CPUThrottlingHigh alert firing for vmagent (38.75% throttling). The vm-operator applies a default CPU limit of 200m even when not explicitly set in values.yaml.
+
+**Fix:** Explicitly set vmagent resource limits with only a memory limit (no CPU limit) in `gitops/apps/monitoring/values.yaml`. This follows the same pattern as commit `a490144` which removed CPU limits on other throttled resources.
+
+**KubeAPIErrorBudgetBurn:** Also observed this alert — caused by transient post-deploy issues (etcd connection errors, vm-operator webhook TLS cert regeneration, metrics-server API unavailability). These are expected to self-resolve after cluster stabilization.
+
 ## 2026-02-12: Fix Windows Server 2022 KubeVirt VM configuration
 
 **Problem:** Windows Server 2022 VM boots in KubeVirt but hangs at "click to continue" on VNC — the Windows installer never starts.

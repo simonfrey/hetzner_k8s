@@ -28,6 +28,8 @@ vmagent:
       requests:
         cpu: 50m
         memory: 64Mi
+      limits:
+        memory: 256Mi
 
 # VMAlert (evaluates rules, sends to VMAlertmanager)
 vmalert:

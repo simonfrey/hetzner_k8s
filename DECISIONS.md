@@ -210,3 +210,15 @@ This makes `terraform apply` fully self-contained — no manual post-deploy step
 **Changes:**
 - `gitops/root-app/templates/{kubevirt-operator,kubevirt-cr,cdi-operator,cdi-cr}.yaml`: Wrapped in `{{- if .Values.enableWindows }}` / `{{- end }}`, matching the existing pattern in `windows.yaml`. When `enableWindows=false`, ArgoCD prunes these Applications and their child resources.
 - `gitops/apps/kubevirt-operator/kubevirt-operator.yaml`: Reverted virt-operator Deployment nodeSelector to just `kubernetes.io/os: linux` (removed `kubevirt: "true"`). Added control-plane and master tolerations so the operator can schedule on cp-1. Kept kubevirt toleration for when dedicated nodes exist.
+
+## 2026-03-06: Enable ServerSideApply globally for all ArgoCD apps
+
+**Problem:** The monitoring ArgoCD app sync failed permanently (exhausted 5 retries) because 6 large prometheus-operator CRDs exceed the 262144-byte `kubectl.kubernetes.io/last-applied-configuration` annotation limit. Without these CRDs, no Prometheus or Alertmanager pods are created.
+
+**Decision:** Enable `ServerSideApply=true` globally for all ArgoCD apps, not just the ones with known large CRDs. SSA avoids the annotation size limit entirely and is the recommended approach per ArgoCD docs.
+
+**Changes:**
+- `gitops/root-app/templates/_helpers.tpl`: Added `syncOptions: [ServerSideApply=true]` to the shared syncPolicy helper (covers 10+ apps using the helper)
+- `gitops/root-app/templates/cert-manager.yaml`: Added `ServerSideApply=true` to inline syncOptions
+- `gitops/root-app/templates/traefik.yaml`: Added `ServerSideApply=true` to inline syncOptions
+- Already had SSA: monitoring.yaml, kubevirt-operator.yaml, cdi-operator.yaml

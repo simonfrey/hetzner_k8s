@@ -6,6 +6,8 @@ syncPolicy:
   automated:
     prune: true
     selfHeal: true
+  syncOptions:
+    - ServerSideApply=true
   retry:
     limit: 5
     backoff:

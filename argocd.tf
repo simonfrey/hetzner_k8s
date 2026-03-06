@@ -150,6 +150,14 @@ resource "helm_release" "argocd" {
     }
   })]
 
+  # Enable server-side diff globally — ArgoCD's built-in K8s schema
+  # doesn't know about fields added in K8s 1.33+ (e.g. .status.terminatingReplicas),
+  # causing ComparisonError on client-side diff.
+  set {
+    name  = "configs.params.controller\\.diff\\.server\\.side"
+    value = "true"
+  }
+
   # Server runs insecure (Traefik handles TLS if exposed)
   set {
     name  = "configs.params.server\\.insecure"

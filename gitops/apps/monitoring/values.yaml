@@ -17,7 +17,6 @@ vmsingle:
         cpu: 100m
         memory: 512Mi
       limits:
-        cpu: 500m
         memory: 1Gi
 
 # VMAgent (scrapes metrics, sends to VMSingle)
@@ -40,7 +39,6 @@ vmalert:
         cpu: 50m
         memory: 64Mi
       limits:
-        cpu: 200m
         memory: 256Mi
 
 # VMAlertmanager (routes alerts to Pushover)
@@ -55,7 +53,6 @@ alertmanager:
         cpu: 10m
         memory: 32Mi
       limits:
-        cpu: 100m
         memory: 64Mi
   config:
     route:
@@ -92,7 +89,6 @@ grafana:
       cpu: 50m
       memory: 128Mi
     limits:
-      cpu: 200m
       memory: 256Mi
   defaultDashboardsEnabled: true
   defaultDashboardsTimezone: utc
@@ -101,12 +97,20 @@ grafana:
 
 # VM Operator
 victoria-metrics-operator:
+  env:
+    - name: VM_VMAGENTDEFAULT_USEDEFAULTRESOURCES
+      value: "false"
+    - name: VM_VMALERTDEFAULT_USEDEFAULTRESOURCES
+      value: "false"
+    - name: VM_VMSINGLEDEFAULT_USEDEFAULTRESOURCES
+      value: "false"
+    - name: VM_VMALERTMANAGER_USEDEFAULTRESOURCES
+      value: "false"
   resources:
     requests:
       cpu: 50m
       memory: 64Mi
     limits:
-      cpu: 200m
       memory: 256Mi
 
 # Node exporter (runs on all nodes)

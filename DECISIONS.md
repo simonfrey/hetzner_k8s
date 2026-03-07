@@ -278,6 +278,16 @@ This makes `terraform apply` fully self-contained — no manual post-deploy step
 - VM spec unchanged — `persistentVolumeClaim.claimName: windows-iso` works with DataVolume-created PVC
 - KubeVirt automatically waits for DataVolume import to complete before starting the VM
 
+## 2026-03-07: Remove all CPU limits to fix CPUThrottlingHigh alerts
+
+**Problem:** CPUThrottlingHigh alerts firing for git-sync (65% throttling) and vmagent (25% throttling). CPU limits cause CFS throttling without benefit on a small cluster. The vm-operator also injects default CPU limits via `USEDEFAULTRESOURCES=true` even when not specified in values.yaml.
+
+**Decision:** Remove all CPU limits across the cluster. Keep memory limits (prevent OOM) and all requests (scheduling). Disable vm-operator default resource injection so it doesn't re-add CPU limits to vmagent, vmalert, vmsingle, and alertmanager.
+
+**Changes:**
+- `gitops/apps/simon-frey-com-main/deployment.yaml`: Removed `cpu: 100m` limit from git-sync container
+- `gitops/apps/monitoring/values.yaml`: Removed CPU limits from vmsingle (500m), vmalert (200m), alertmanager (100m), vm-operator (200m), grafana (200m). Added `VM_VM*DEFAULT_USEDEFAULTRESOURCES=false` env vars to vm-operator to prevent default CPU limit injection on VM CRs.
+
 ## 2026-03-06: Move cert-manager and metrics-server off control plane
 
 **Problem:** CP node (cx33) is overloaded — kube-apiserver, scheduler, and controller-manager crash repeatedly. Every non-essential pod on CP adds to memory/CPU pressure.

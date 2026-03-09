@@ -1,5 +1,11 @@
 # Decisions
 
+## 2026-03-09: Replace Helm-based ClickHouse operator with kubectl manifest
+
+**Problem:** The Altinity ClickHouse Helm chart (v0.26.0) deployed the operator pod with correct RBAC, but it never reconciled the ClickHouseInstallation CR. Root cause unclear — likely a bug in the Helm chart's controller setup.
+
+**Fix:** Replaced with the upstream `clickhouse-operator-install-bundle.yaml` manifest from the Altinity GitHub repo, stored in `gitops/apps/clickhouse-operator/`. The ArgoCD app now uses a directory source instead of Helm. The manifest installs into `kube-system` namespace (upstream default).
+
 ## 2026-03-09: Deploy Plausible Analytics CE with database operators
 
 **Goal:** Self-hosted privacy-focused analytics at `p.tools.simon-frey.com`.

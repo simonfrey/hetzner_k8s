@@ -2,6 +2,8 @@ apiVersion: clickhouse.altinity.com/v1
 kind: ClickHouseInstallation
 metadata:
   name: plausible-clickhouse
+  annotations:
+    plausible/reconcile-trigger: "1"
 spec:
   configuration:
     clusters:

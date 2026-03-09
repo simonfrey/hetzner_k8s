@@ -30,7 +30,7 @@ spec:
                 name: plausible.plausible-postgres.credentials.postgresql.acid.zalan.do
                 key: password
           - name: DATABASE_URL
-            value: postgres://plausible:$(PG_PASSWORD)@plausible-postgres:5432/plausible
+            value: postgres://plausible:$(PG_PASSWORD)@plausible-postgres:5432/plausible?sslmode=disable
           - name: CLICKHOUSE_DATABASE_URL
             value: http://chi-plausible-clickhouse-plausible-0-0:8123/plausible
         ingressRoute:

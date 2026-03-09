@@ -3,6 +3,8 @@ kind: postgresql
 metadata:
   name: plausible-postgres
 spec:
+  podAnnotations:
+    plausible/restart-trigger: "1"
   teamId: plausible
   volume:
     size: 5Gi

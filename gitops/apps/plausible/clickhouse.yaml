@@ -6,6 +6,8 @@ metadata:
     plausible/reconcile-trigger: "1"
 spec:
   configuration:
+    users:
+      default/networks/ip: "::/0"
     clusters:
       - name: plausible
         layout:

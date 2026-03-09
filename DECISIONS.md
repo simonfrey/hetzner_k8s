@@ -304,6 +304,16 @@ This makes `terraform apply` fully self-contained — no manual post-deploy step
 - `gitops/apps/simon-frey-com-main/deployment.yaml`: Removed `cpu: 100m` limit from git-sync container
 - `gitops/apps/monitoring/values.yaml`: Removed CPU limits from vmsingle (500m), vmalert (200m), alertmanager (100m), vm-operator (200m), grafana (200m). Added `VM_VM*DEFAULT_USEDEFAULTRESOURCES=false` env vars to vm-operator to prevent default CPU limit injection on VM CRs.
 
+## 2026-03-09: Fix Plausible — ClickHouse auth + Postgres pg_hba
+
+**Problem:** Plausible crashlooping with two errors:
+1. ClickHouse operator auto-generates `chop-generated-users.xml` that restricts the `default` user's network access to only ClickHouse pod IPs via `host_regexp`. Plausible connects as `default` from a different pod IP → rejected.
+2. Postgres pg_hba config in the CR is correct (`host all all 0.0.0.0/0 md5`) but the running pod isn't applying it — needs a pod restart.
+
+**Changes:**
+- `gitops/apps/plausible/clickhouse.yaml`: Added `users.default/networks/ip: "::/0"` to override the operator's auto-generated network restriction, allowing connections from any IP
+- `gitops/apps/plausible/postgres.yaml`: Added `podAnnotations.plausible/restart-trigger: "1"` to force the Zalando operator to recreate the pod with the correct pg_hba config
+
 ## 2026-03-06: Move cert-manager and metrics-server off control plane
 
 **Problem:** CP node (cx33) is overloaded — kube-apiserver, scheduler, and controller-manager crash repeatedly. Every non-essential pod on CP adds to memory/CPU pressure.

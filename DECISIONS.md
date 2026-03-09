@@ -304,15 +304,21 @@ This makes `terraform apply` fully self-contained — no manual post-deploy step
 - `gitops/apps/simon-frey-com-main/deployment.yaml`: Removed `cpu: 100m` limit from git-sync container
 - `gitops/apps/monitoring/values.yaml`: Removed CPU limits from vmsingle (500m), vmalert (200m), alertmanager (100m), vm-operator (200m), grafana (200m). Added `VM_VM*DEFAULT_USEDEFAULTRESOURCES=false` env vars to vm-operator to prevent default CPU limit injection on VM CRs.
 
-## 2026-03-09: Fix Plausible — ClickHouse auth + Postgres pg_hba
+## 2026-03-09: Fix Plausible — ClickHouse auth + Postgres SSL (Option A)
 
-**Problem:** Plausible crashlooping with two errors:
-1. ClickHouse operator auto-generates `chop-generated-users.xml` that restricts the `default` user's network access to only ClickHouse pod IPs via `host_regexp`. Plausible connects as `default` from a different pod IP → rejected.
-2. Postgres pg_hba config in the CR is correct (`host all all 0.0.0.0/0 md5`) but the running pod isn't applying it — needs a pod restart.
+**Problem:** Plausible crashlooping (Init:Error) with 5 interrelated issues:
+1. ClickHouse operator auto-generates `chop-generated-users.xml` restricting the `default` user to ClickHouse pod IPs only — Plausible connects from a different pod IP → rejected.
+2. ClickHouse v26.2.4 requires a password for the `default` user (`REQUIRED_PASSWORD`) — Plausible had no credentials in `CLICKHOUSE_DATABASE_URL`.
+3. Previous attempt to override `default/networks/ip` in CHI spec didn't take effect — operator-generated config takes precedence.
+4. Zalando Postgres operator's Patroni prepends `hostnossl all all all reject` before user-specified pg_hba rules — non-SSL connections rejected.
+5. `DATABASE_URL` used `sslmode=disable`, forcing non-SSL connections that hit issue 4.
+
+**Decision:** Option A — adapt Plausible's connection config to work with operator defaults instead of fighting them.
 
 **Changes:**
-- `gitops/apps/plausible/clickhouse.yaml`: Added `users.default/networks/ip: "::/0"` to override the operator's auto-generated network restriction, allowing connections from any IP
-- `gitops/apps/plausible/postgres.yaml`: Added `podAnnotations.plausible/restart-trigger: "1"` to force the Zalando operator to recreate the pod with the correct pg_hba config
+- `gitops/apps/plausible/clickhouse.yaml`: Replaced ineffective `default/networks/ip` with a dedicated `plausible` user with password (from `plausible-credentials` secret via `valueFrom.secretKeyRef`), open network (`::/0`), and default profile/quota.
+- `gitops/root-app/templates/plausible.yaml`: Changed `DATABASE_URL` from `sslmode=disable` to `sslmode=require` (Zalando operator provides SSL certs). Added `CH_PASSWORD` env from secret, updated `CLICKHOUSE_DATABASE_URL` to include `plausible:<password>` credentials.
+- `argocd.tf`: Added `random_password.plausible_clickhouse` (24 chars, no special) and added `CLICKHOUSE_PASSWORD` to the existing `plausible-credentials` secret.
 
 ## 2026-03-06: Move cert-manager and metrics-server off control plane
 

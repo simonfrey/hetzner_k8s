@@ -540,6 +540,11 @@ resource "kubernetes_namespace" "plausible" {
   depends_on = [helm_release.cilium]
 }
 
+resource "random_password" "plausible_clickhouse" {
+  length  = 24
+  special = false
+}
+
 resource "random_password" "plausible_secret_key" {
   length  = 64
   special = false
@@ -557,8 +562,9 @@ resource "kubernetes_secret" "plausible_credentials" {
   }
 
   data = {
-    SECRET_KEY_BASE = base64encode(random_password.plausible_secret_key.result)
-    TOTP_VAULT_KEY  = base64encode(random_password.plausible_totp_vault.result)
+    SECRET_KEY_BASE      = base64encode(random_password.plausible_secret_key.result)
+    TOTP_VAULT_KEY       = base64encode(random_password.plausible_totp_vault.result)
+    CLICKHOUSE_PASSWORD  = random_password.plausible_clickhouse.result
   }
 }
 

@@ -1,0 +1,65 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: plausible
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://charts.pascaliske.dev
+    chart: plausible
+    targetRevision: "2.0.0"
+    helm:
+      valuesObject:
+        secret:
+          existingSecret: plausible-credentials
+        env:
+          - name: TZ
+            value: UTC
+          - name: BASE_URL
+            value: https://p.tools.simon-frey.com
+          - name: DISABLE_REGISTRATION
+            value: invite_only
+          - name: PG_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: plausible.plausible-postgres.credentials.postgresql.acid.zalan.do
+                key: password
+          - name: DATABASE_URL
+            value: postgres://plausible:$(PG_PASSWORD)@plausible-postgres:5432/plausible
+          - name: CLICKHOUSE_DATABASE_URL
+            value: http://chi-plausible-clickhouse-plausible-0-0:8123/plausible
+        ingressRoute:
+          create: true
+          entryPoints:
+            - websecure
+          rule: Host(`p.tools.simon-frey.com`)
+          middlewares: []
+          tlsSecretName: plausible-tls
+        certificate:
+          create: true
+          dnsNames:
+            - p.tools.simon-frey.com
+          secretName: plausible-tls
+          issuerRef:
+            kind: ClusterIssuer
+            name: letsencrypt-prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: plausible
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

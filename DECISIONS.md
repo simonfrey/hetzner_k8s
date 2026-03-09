@@ -1,5 +1,15 @@
 # Decisions
 
+## 2026-03-09: Deploy Plausible Analytics CE with database operators
+
+**Goal:** Self-hosted privacy-focused analytics at `p.tools.simon-frey.com`.
+
+**Stack:** Plausible CE (pascaliske Helm chart) + Zalando Postgres Operator + Altinity ClickHouse Operator.
+
+**Why operators over StatefulSets:** Operators handle lifecycle management (backups, failover, upgrades) for databases. Even for single-instance setups, they provide proper schema management and credential rotation.
+
+**Connection string pattern:** Kubernetes `$(VAR)` env var substitution to build `DATABASE_URL` from the operator-generated postgres password secret, avoiding Terraform dependency on operator-generated credentials.
+
 ## 2026-03-06: Remove CPU limit on vmagent to fix CPUThrottlingHigh alert
 
 **Problem:** CPUThrottlingHigh alert firing for vmagent (38.75% throttling). The vm-operator applies a default CPU limit of 200m even when not explicitly set in values.yaml.

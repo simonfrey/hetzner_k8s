@@ -1,0 +1,20 @@
+apiVersion: acid.zalan.do/v1
+kind: postgresql
+metadata:
+  name: plausible-postgres
+spec:
+  teamId: plausible
+  volume:
+    size: 5Gi
+    storageClass: hcloud-volumes
+  numberOfInstances: 1
+  users:
+    plausible: []
+  databases:
+    plausible: plausible
+  postgresql:
+    version: "16"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi

@@ -1,0 +1,26 @@
+apiVersion: clickhouse.altinity.com/v1
+kind: ClickHouseInstallation
+metadata:
+  name: plausible-clickhouse
+spec:
+  configuration:
+    clusters:
+      - name: plausible
+        layout:
+          shardsCount: 1
+          replicasCount: 1
+    settings:
+      logger/level: warning
+  defaults:
+    templates:
+      dataVolumeClaimTemplate: data
+  templates:
+    volumeClaimTemplates:
+      - name: data
+        spec:
+          storageClassName: hcloud-volumes
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 10Gi

@@ -528,3 +528,37 @@ resource "kubernetes_secret" "website_git_sync_ssh" {
   }
 }
 
+# ============================================================================
+# I) Plausible Analytics — namespace + secrets
+# ============================================================================
+
+resource "kubernetes_namespace" "plausible" {
+  metadata {
+    name = "plausible"
+  }
+
+  depends_on = [helm_release.cilium]
+}
+
+resource "random_password" "plausible_secret_key" {
+  length  = 64
+  special = false
+}
+
+resource "random_password" "plausible_totp_vault" {
+  length  = 32
+  special = false
+}
+
+resource "kubernetes_secret" "plausible_credentials" {
+  metadata {
+    name      = "plausible-credentials"
+    namespace = kubernetes_namespace.plausible.metadata[0].name
+  }
+
+  data = {
+    SECRET_KEY_BASE = base64encode(random_password.plausible_secret_key.result)
+    TOTP_VAULT_KEY  = base64encode(random_password.plausible_totp_vault.result)
+  }
+}
+

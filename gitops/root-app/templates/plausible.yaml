@@ -30,7 +30,7 @@ spec:
                 name: plausible.plausible-postgres.credentials.postgresql.acid.zalan.do
                 key: password
           - name: DATABASE_URL
-            value: postgres://plausible:$(PG_PASSWORD)@plausible-postgres:5432/plausible?sslmode=require
+            value: postgres://plausible:$(PG_PASSWORD)@plausible-postgres:5432/plausible
           - name: CH_PASSWORD
             valueFrom:
               secretKeyRef:

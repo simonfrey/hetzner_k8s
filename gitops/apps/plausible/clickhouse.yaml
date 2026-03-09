@@ -3,15 +3,11 @@ kind: ClickHouseInstallation
 metadata:
   name: plausible-clickhouse
   annotations:
-    plausible/reconcile-trigger: "2"
+    plausible/reconcile-trigger: "3"
 spec:
   configuration:
     users:
-      plausible/password:
-        valueFrom:
-          secretKeyRef:
-            name: plausible-credentials
-            key: CLICKHOUSE_PASSWORD
+      plausible/k8s_secret_password: plausible/plausible-credentials/CLICKHOUSE_PASSWORD
       plausible/networks/ip: "::/0"
       plausible/profile: default
       plausible/quota: default

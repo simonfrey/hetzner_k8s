@@ -320,6 +320,16 @@ This makes `terraform apply` fully self-contained — no manual post-deploy step
 - `gitops/root-app/templates/plausible.yaml`: Changed `DATABASE_URL` from `sslmode=disable` to `sslmode=require` (Zalando operator provides SSL certs). Added `CH_PASSWORD` env from secret, updated `CLICKHOUSE_DATABASE_URL` to include `plausible:<password>` credentials.
 - `argocd.tf`: Added `random_password.plausible_clickhouse` (24 chars, no special) and added `CLICKHOUSE_PASSWORD` to the existing `plausible-credentials` secret.
 
+## 2026-03-09: Fix Plausible — ClickHouse user creation + Postgres SSL removal
+
+**Problem:** Two remaining issues after Option A implementation:
+1. ClickHouse `plausible` user was never created — `valueFrom.secretKeyRef` YAML syntax was silently ignored by the operator. The `chop-generated-users.xml` configmap only contained `default` and `clickhouse_operator`.
+2. Postgres connections failed with `no encryption` — `sslmode=require` in DATABASE_URL wasn't taking effect (possibly Postgrex URL parsing or URL-breaking characters in the Zalando-generated password).
+
+**Changes:**
+- `gitops/apps/plausible/clickhouse.yaml`: Switched from `valueFrom.secretKeyRef` to the string-based `k8s_secret_password` format (`namespace/secret/key`), which is the documented and proven approach for the ClickHouse operator. Bumped reconcile-trigger to "3".
+- `gitops/root-app/templates/plausible.yaml`: Removed `?sslmode=require` from DATABASE_URL. The pg_hba config already allows non-SSL via `host all all 0.0.0.0/0 md5`.
+
 ## 2026-03-06: Move cert-manager and metrics-server off control plane
 
 **Problem:** CP node (cx33) is overloaded — kube-apiserver, scheduler, and controller-manager crash repeatedly. Every non-essential pod on CP adds to memory/CPU pressure.

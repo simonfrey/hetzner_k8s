@@ -540,7 +540,7 @@ resource "kubernetes_namespace" "plausible" {
   depends_on = [helm_release.cilium]
 }
 
-resource "random_password" "plausible_clickhouse" {
+resource "random_password" "plausible_postgres" {
   length  = 24
   special = false
 }
@@ -562,9 +562,23 @@ resource "kubernetes_secret" "plausible_credentials" {
   }
 
   data = {
-    SECRET_KEY_BASE      = base64encode(random_password.plausible_secret_key.result)
-    TOTP_VAULT_KEY       = base64encode(random_password.plausible_totp_vault.result)
-    CLICKHOUSE_PASSWORD  = random_password.plausible_clickhouse.result
+    SECRET_KEY_BASE = base64encode(random_password.plausible_secret_key.result)
+    TOTP_VAULT_KEY  = base64encode(random_password.plausible_totp_vault.result)
+  }
+}
+
+# Pre-create Postgres credentials secret before Zalano operator starts.
+# Zalano won't overwrite an existing secret, so we control the password.
+# Using special=false avoids URL-breaking chars in DATABASE_URL.
+resource "kubernetes_secret" "plausible_postgres_credentials" {
+  metadata {
+    name      = "plausible.plausible-postgres.credentials.postgresql.acid.zalan.do"
+    namespace = kubernetes_namespace.plausible.metadata[0].name
+  }
+
+  data = {
+    username = "plausible"
+    password = random_password.plausible_postgres.result
   }
 }
 

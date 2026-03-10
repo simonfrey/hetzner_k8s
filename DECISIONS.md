@@ -330,6 +330,21 @@ This makes `terraform apply` fully self-contained — no manual post-deploy step
 - `gitops/apps/plausible/clickhouse.yaml`: Switched from `valueFrom.secretKeyRef` to the string-based `k8s_secret_password` format (`namespace/secret/key`), which is the documented and proven approach for the ClickHouse operator. Bumped reconcile-trigger to "3".
 - `gitops/root-app/templates/plausible.yaml`: Removed `?sslmode=require` from DATABASE_URL. The pg_hba config already allows non-SSL via `host all all 0.0.0.0/0 md5`.
 
+## 2026-03-10: Fix Plausible — use ClickHouse default user + Terraform-managed Postgres password
+
+**Problem:** Plausible crashlooping 22h (259+ restarts). Two remaining issues:
+1. ClickHouse operator silently ignores both user creation formats (`valueFrom.secretKeyRef` and `k8s_secret_password`). The `plausible` user was never created — `chop-generated-users.xml` only has `default` + `clickhouse_operator`.
+2. Postgres connections fail — Patroni prepends `hostnossl all all 0.0.0.0/0 reject`, blocking non-SSL. Previous `sslmode=require` removal didn't help because the Zalano-generated password likely contains URL-breaking characters (`@`, `#`, `?`) corrupting `DATABASE_URL`.
+
+**Fix 1 — ClickHouse:** Stop fighting the operator. Use the passwordless `default` user with open network access (`default/networks/ip: "::/0"`). Removed all `plausible/...` user entries. Removed `CH_PASSWORD` env var and simplified `CLICKHOUSE_DATABASE_URL` to `http://default@...`.
+
+**Fix 2 — Postgres:** Pre-create the Zalano credentials secret (`plausible.plausible-postgres.credentials.postgresql.acid.zalan.do`) via Terraform with `random_password` (24 chars, `special=false`). Zalano operator won't overwrite existing secrets. Safe password means `?sslmode=require` works in `DATABASE_URL`.
+
+**Changes:**
+- `gitops/apps/plausible/clickhouse.yaml`: Replaced plausible user config with `default/networks/ip`, bumped reconcile-trigger to "4"
+- `gitops/root-app/templates/plausible.yaml`: Removed CH_PASSWORD env, simplified CLICKHOUSE_DATABASE_URL, added `?sslmode=require` back to DATABASE_URL
+- `argocd.tf`: Replaced `random_password.plausible_clickhouse` with `random_password.plausible_postgres`, removed CLICKHOUSE_PASSWORD from secret, added `kubernetes_secret.plausible_postgres_credentials`
+
 ## 2026-03-06: Move cert-manager and metrics-server off control plane
 
 **Problem:** CP node (cx33) is overloaded — kube-apiserver, scheduler, and controller-manager crash repeatedly. Every non-essential pod on CP adds to memory/CPU pressure.

@@ -3,14 +3,11 @@ kind: ClickHouseInstallation
 metadata:
   name: plausible-clickhouse
   annotations:
-    plausible/reconcile-trigger: "3"
+    plausible/reconcile-trigger: "4"
 spec:
   configuration:
     users:
-      plausible/k8s_secret_password: plausible/plausible-credentials/CLICKHOUSE_PASSWORD
-      plausible/networks/ip: "::/0"
-      plausible/profile: default
-      plausible/quota: default
+      default/networks/ip: "::/0"
     clusters:
       - name: plausible
         layout:

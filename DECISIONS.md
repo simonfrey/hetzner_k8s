@@ -330,20 +330,20 @@ This makes `terraform apply` fully self-contained — no manual post-deploy step
 - `gitops/apps/plausible/clickhouse.yaml`: Switched from `valueFrom.secretKeyRef` to the string-based `k8s_secret_password` format (`namespace/secret/key`), which is the documented and proven approach for the ClickHouse operator. Bumped reconcile-trigger to "3".
 - `gitops/root-app/templates/plausible.yaml`: Removed `?sslmode=require` from DATABASE_URL. The pg_hba config already allows non-SSL via `host all all 0.0.0.0/0 md5`.
 
-## 2026-03-10: Fix Plausible — use ClickHouse default user + Terraform-managed Postgres password
+## 2026-03-10: Fix Plausible — ClickHouse files override + Terraform-managed Postgres password
 
-**Problem:** Plausible crashlooping 22h (259+ restarts). Two remaining issues:
-1. ClickHouse operator silently ignores both user creation formats (`valueFrom.secretKeyRef` and `k8s_secret_password`). The `plausible` user was never created — `chop-generated-users.xml` only has `default` + `clickhouse_operator`.
-2. Postgres connections fail — Patroni prepends `hostnossl all all 0.0.0.0/0 reject`, blocking non-SSL. Previous `sslmode=require` removal didn't help because the Zalano-generated password likely contains URL-breaking characters (`@`, `#`, `?`) corrupting `DATABASE_URL`.
+**Problem (Round 3):** Plausible crashlooping 22h (259+ restarts). Two issues:
+1. ClickHouse operator ignores `default/networks/ip` in CHI spec — `chop-generated-users.xml` always restricts `default` to localhost + pod IPs. Also requires password (`REQUIRED_PASSWORD`).
+2. Postgres `no encryption` — Zalano-generated password contains URL-breaking chars, corrupting `DATABASE_URL` so `?sslmode=require` is never parsed.
 
-**Fix 1 — ClickHouse:** Stop fighting the operator. Use the passwordless `default` user with open network access (`default/networks/ip: "::/0"`). Removed all `plausible/...` user entries. Removed `CH_PASSWORD` env var and simplified `CLICKHOUSE_DATABASE_URL` to `http://default@...`.
+**Fix 1 — ClickHouse (`configuration.files` override):** The operator controls the `default` user in `chop-generated-users.xml` and ignores CHI spec overrides for it. Used `spec.configuration.files` to inject `users.d/plausible-override.xml` — a custom XML file that sets `default` user with empty password and `::/0` network access. ClickHouse merges XML configs alphabetically, so `plausible-override.xml` loads after `chop-generated-users.xml` and wins.
 
-**Fix 2 — Postgres:** Pre-create the Zalano credentials secret (`plausible.plausible-postgres.credentials.postgresql.acid.zalan.do`) via Terraform with `random_password` (24 chars, `special=false`). Zalano operator won't overwrite existing secrets. Safe password means `?sslmode=require` works in `DATABASE_URL`.
+**Fix 2 — Postgres (Terraform-managed password):** Imported the existing Zalano credentials secret into Terraform state, then `terraform apply` overwrote the password with `random_password.plausible_postgres` (24 chars, `special=false`). Restarted Postgres pod to reload credentials. Safe password means `?sslmode=require` works in `DATABASE_URL`.
 
 **Changes:**
-- `gitops/apps/plausible/clickhouse.yaml`: Replaced plausible user config with `default/networks/ip`, bumped reconcile-trigger to "4"
-- `gitops/root-app/templates/plausible.yaml`: Removed CH_PASSWORD env, simplified CLICKHOUSE_DATABASE_URL, added `?sslmode=require` back to DATABASE_URL
-- `argocd.tf`: Replaced `random_password.plausible_clickhouse` with `random_password.plausible_postgres`, removed CLICKHOUSE_PASSWORD from secret, added `kubernetes_secret.plausible_postgres_credentials`
+- `gitops/apps/plausible/clickhouse.yaml`: Added `configuration.files` with `users.d/plausible-override.xml`, bumped reconcile-trigger to "5"
+- `gitops/root-app/templates/plausible.yaml`: Removed CH_PASSWORD env, simplified CLICKHOUSE_DATABASE_URL to `http://default@...`, added `?sslmode=require` to DATABASE_URL
+- `argocd.tf`: Replaced `random_password.plausible_clickhouse` with `random_password.plausible_postgres`, removed CLICKHOUSE_PASSWORD from secret, added `kubernetes_secret.plausible_postgres_credentials` (imported existing secret into TF state)
 
 ## 2026-03-06: Move cert-manager and metrics-server off control plane
 

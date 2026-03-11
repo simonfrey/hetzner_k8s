@@ -42,8 +42,11 @@ spec:
           create: true
           entryPoints:
             - websecure
+            - web
           rule: Host(`p.tools.simon-frey.com`)
-          middlewares: []
+          middlewares:
+            - name: redirect-https
+              namespace: plausible
           tlsSecretName: plausible-tls
         certificate:
           create: true

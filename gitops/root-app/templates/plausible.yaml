@@ -47,6 +47,8 @@ spec:
           middlewares:
             - name: redirect-https
               namespace: plausible
+            - name: inject-css
+              namespace: plausible
           tlsSecretName: plausible-tls
         certificate:
           create: true

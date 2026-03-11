@@ -360,3 +360,13 @@ This makes `terraform apply` fully self-contained — no manual post-deploy step
 **Changes:**
 - `gitops/root-app/templates/cert-manager.yaml`: Removed tolerations from main, cainjector, and webhook
 - `gitops/root-app/templates/metrics-server.yaml`: Removed tolerations block
+
+## 2026-03-11: Fix Plausible ClickHouse auth — dedicated plausible user
+
+**Problem:** ClickHouse `default` user auth fails (`Authentication failed`). The XML override (`users.d/plausible-override.xml`) doesn't reliably override the operator-generated password for the built-in `default` user — the operator controls `default` via `chop-generated-users.xml` and ignores spec overrides for built-in users.
+
+**Fix:** Stop fighting the operator over the `default` user. Instead, create a dedicated `plausible` user with empty password, open network (`::/0`), and default profile/quota via `spec.configuration.users` — the operator's supported path for custom users. Updated `CLICKHOUSE_DATABASE_URL` to use `plausible@` instead of `default@`.
+
+**Changes:**
+- `gitops/apps/plausible/clickhouse.yaml`: Replaced `default/networks/ip` and `configuration.files` XML override with `plausible/*` user entries. Bumped reconcile-trigger to "6".
+- `gitops/root-app/templates/plausible.yaml`: Changed `CLICKHOUSE_DATABASE_URL` from `default@` to `plausible@`.

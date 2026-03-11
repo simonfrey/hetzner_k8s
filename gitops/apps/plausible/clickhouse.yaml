@@ -3,25 +3,14 @@ kind: ClickHouseInstallation
 metadata:
   name: plausible-clickhouse
   annotations:
-    plausible/reconcile-trigger: "5"
+    plausible/reconcile-trigger: "6"
 spec:
   configuration:
     users:
-      default/networks/ip: "::/0"
-    files:
-      users.d/plausible-override.xml: |
-        <clickhouse>
-          <users>
-            <default>
-              <password></password>
-              <networks>
-                <ip>::/0</ip>
-              </networks>
-              <profile>default</profile>
-              <quota>default</quota>
-            </default>
-          </users>
-        </clickhouse>
+      plausible/password: ""
+      plausible/networks/ip: "::/0"
+      plausible/profile: default
+      plausible/quota: default
     clusters:
       - name: plausible
         layout:

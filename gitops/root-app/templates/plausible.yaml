@@ -32,7 +32,7 @@ spec:
           - name: DATABASE_URL
             value: postgres://plausible:$(PG_PASSWORD)@plausible-postgres:5432/plausible
           - name: CLICKHOUSE_DATABASE_URL
-            value: http://default@chi-plausible-clickhouse-plausible-0-0:8123/plausible
+            value: http://plausible@chi-plausible-clickhouse-plausible-0-0:8123/plausible
         ingressRoute:
           create: true
           entryPoints:

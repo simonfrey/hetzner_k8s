@@ -376,4 +376,5 @@ Also: `random_password.plausible_postgres` and `kubernetes_secret.plausible_post
 **Changes:**
 - `argocd.tf`: Added `random_password.plausible_clickhouse`, changed `CLICKHOUSE_PASSWORD` from `""` to the generated password.
 - `gitops/apps/plausible/clickhouse.yaml`: Changed `plausible/password: ""` to `plausible/k8s_secret_password: plausible/plausible-credentials/CLICKHOUSE_PASSWORD`. Bumped reconcile-trigger to "7".
-- `gitops/root-app/templates/plausible.yaml`: Added `CH_PASSWORD` env from secret, included password in `CLICKHOUSE_DATABASE_URL`, added `?sslmode=require` to `DATABASE_URL`.
+- `gitops/root-app/templates/plausible.yaml`: Added `CH_PASSWORD` env from secret, included password in `CLICKHOUSE_DATABASE_URL`.
+- `gitops/apps/plausible/postgres.yaml`: Removed `ssl: "off"` — the Zalando operator requires SSL to connect and create roles/databases. With SSL off, the operator created the credentials secret but never created the `plausible` user or database in Postgres (`could not sync roles: still failing after 8 retries`). The pg_hba config already allows both SSL and non-SSL client connections.

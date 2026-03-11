@@ -23,8 +23,7 @@ spec:
       - host    all all ::/0 md5
   postgresql:
     version: "16"
-    parameters:
-      ssl: "off"
+    parameters: {}
   resources:
     requests:
       cpu: 100m

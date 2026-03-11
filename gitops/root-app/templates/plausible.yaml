@@ -29,10 +29,15 @@ spec:
               secretKeyRef:
                 name: plausible.plausible-postgres.credentials.postgresql.acid.zalan.do
                 key: password
+          - name: CH_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: plausible-credentials
+                key: CLICKHOUSE_PASSWORD
           - name: DATABASE_URL
             value: postgres://plausible:$(PG_PASSWORD)@plausible-postgres:5432/plausible
           - name: CLICKHOUSE_DATABASE_URL
-            value: http://plausible@chi-plausible-clickhouse-plausible-0-0:8123/plausible
+            value: http://plausible:$(CH_PASSWORD)@chi-plausible-clickhouse-plausible-0-0:8123/plausible
         ingressRoute:
           create: true
           entryPoints:

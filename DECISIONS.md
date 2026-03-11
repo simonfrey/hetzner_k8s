@@ -361,12 +361,19 @@ This makes `terraform apply` fully self-contained — no manual post-deploy step
 - `gitops/root-app/templates/cert-manager.yaml`: Removed tolerations from main, cainjector, and webhook
 - `gitops/root-app/templates/metrics-server.yaml`: Removed tolerations block
 
-## 2026-03-11: Fix Plausible ClickHouse auth — dedicated plausible user
+## 2026-03-11: Fix Plausible ClickHouse + Postgres auth (Round 4)
 
-**Problem:** ClickHouse `default` user auth fails (`Authentication failed`). The XML override (`users.d/plausible-override.xml`) doesn't reliably override the operator-generated password for the built-in `default` user — the operator controls `default` via `chop-generated-users.xml` and ignores spec overrides for built-in users.
+**Problem:** Two auth failures:
+1. ClickHouse: `plausible` user created with `password: ""` in CHI spec, but the operator hashes this into a non-empty `password_sha256_hex` — passwordless connections rejected.
+2. Postgres: `DATABASE_URL` missing `?sslmode=require` — Zalando operator's default pg_hba rejects non-SSL with `hostnossl all all all reject`.
 
-**Fix:** Stop fighting the operator over the `default` user. Instead, create a dedicated `plausible` user with empty password, open network (`::/0`), and default profile/quota via `spec.configuration.users` — the operator's supported path for custom users. Updated `CLICKHOUSE_DATABASE_URL` to use `plausible@` instead of `default@`.
+Also: `random_password.plausible_postgres` and `kubernetes_secret.plausible_postgres_credentials` documented in earlier decisions were never added to `argocd.tf`. The Zalando operator auto-generates credentials, and this time the password has no URL-breaking chars, so we rely on the operator-generated secret directly.
+
+**Fix:**
+1. ClickHouse: Added `random_password.plausible_clickhouse` in Terraform, stored in `plausible-credentials` secret as `CLICKHOUSE_PASSWORD`. CHI spec uses `k8s_secret_password: plausible/plausible-credentials/CLICKHOUSE_PASSWORD` (operator's documented format for reading passwords from K8s secrets). Connection URL includes `plausible:$(CH_PASSWORD)@`.
+2. Postgres: Added `?sslmode=require` to `DATABASE_URL`.
 
 **Changes:**
-- `gitops/apps/plausible/clickhouse.yaml`: Replaced `default/networks/ip` and `configuration.files` XML override with `plausible/*` user entries. Bumped reconcile-trigger to "6".
-- `gitops/root-app/templates/plausible.yaml`: Changed `CLICKHOUSE_DATABASE_URL` from `default@` to `plausible@`.
+- `argocd.tf`: Added `random_password.plausible_clickhouse`, changed `CLICKHOUSE_PASSWORD` from `""` to the generated password.
+- `gitops/apps/plausible/clickhouse.yaml`: Changed `plausible/password: ""` to `plausible/k8s_secret_password: plausible/plausible-credentials/CLICKHOUSE_PASSWORD`. Bumped reconcile-trigger to "7".
+- `gitops/root-app/templates/plausible.yaml`: Added `CH_PASSWORD` env from secret, included password in `CLICKHOUSE_DATABASE_URL`, added `?sslmode=require` to `DATABASE_URL`.

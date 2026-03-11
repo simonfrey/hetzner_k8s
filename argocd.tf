@@ -562,8 +562,9 @@ resource "kubernetes_secret" "plausible_credentials" {
   }
 
   data = {
-    SECRET_KEY_BASE = base64encode(random_password.plausible_secret_key.result)
-    TOTP_VAULT_KEY  = base64encode(random_password.plausible_totp_vault.result)
+    SECRET_KEY_BASE     = base64encode(random_password.plausible_secret_key.result)
+    TOTP_VAULT_KEY      = base64encode(random_password.plausible_totp_vault.result)
+    CLICKHOUSE_PASSWORD = ""
   }
 }
 

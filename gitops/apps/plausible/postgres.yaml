@@ -4,7 +4,7 @@ metadata:
   name: plausible-postgres
 spec:
   podAnnotations:
-    plausible/restart-trigger: "1"
+    plausible/restart-trigger: "2"
   teamId: plausible
   volume:
     size: 5Gi
@@ -23,6 +23,8 @@ spec:
       - host    all all ::/0 md5
   postgresql:
     version: "16"
+    parameters:
+      ssl: "off"
   resources:
     requests:
       cpu: 100m

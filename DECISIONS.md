@@ -1,5 +1,11 @@
 # Decisions
 
+## 2026-03-11: Add CLICKHOUSE_PASSWORD to plausible-credentials secret
+
+**Problem:** Plausible's `init-database` init container expects a `CLICKHOUSE_PASSWORD` key in the `plausible-credentials` secret. The key was previously removed, but the pascaliske/plausible Helm chart (v2.0.0) still references it.
+
+**Fix:** Added `CLICKHOUSE_PASSWORD = ""` (empty string) to the secret in `argocd.tf`. This matches the ClickHouse config which uses an empty password.
+
 ## 2026-03-09: Replace Helm-based ClickHouse operator with kubectl manifest
 
 **Problem:** The Altinity ClickHouse Helm chart (v0.26.0) deployed the operator pod with correct RBAC, but it never reconciled the ClickHouseInstallation CR. Root cause unclear — likely a bug in the Helm chart's controller setup.

@@ -1,0 +1,12 @@
+apiVersion: argocd-image-updater.argoproj.io/v1alpha1
+kind: ImageUpdater
+metadata:
+  name: langy-image-updater
+spec:
+  applicationRefs:
+    - namePattern: "simon-frey-com-langy"
+      images:
+        - alias: "langy"
+          imageName: "ghcr.io/simonfrey/langy:latest"
+          commonUpdateSettings:
+            updateStrategy: "digest"

@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd-image-updater
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://argoproj.github.io/argo-helm
+    chart: argocd-image-updater
+    targetRevision: "*"
+    helm:
+      values: |
+        config:
+          registries:
+            - name: GHCR
+              api_url: https://ghcr.io
+              prefix: ghcr.io
+              default: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false

@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: langy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: langy
+  template:
+    metadata:
+      labels:
+        app: langy
+    spec:
+      volumes:
+        - name: migrations
+          emptyDir: {}
+      initContainers:
+        - name: copy-migrations
+          image: ghcr.io/simonfrey/langy:latest
+          command: ["cp", "-r", "/migrations/.", "/shared-migrations/"]
+          volumeMounts:
+            - name: migrations
+              mountPath: /shared-migrations
+        - name: migrate
+          image: migrate/migrate:latest
+          command:
+            - "migrate"
+            - "-path=/migrations"
+            - "-database=$(DATABASE_URL)"
+            - "up"
+          volumeMounts:
+            - name: migrations
+              mountPath: /migrations
+          env:
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: langy.langy-postgres.credentials.postgresql.acid.zalan.do
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: langy.langy-postgres.credentials.postgresql.acid.zalan.do
+                  key: password
+            - name: DATABASE_URL
+              value: "postgres://$(PGUSER):$(PGPASSWORD)@langy-postgres:5432/langy?sslmode=require"
+      containers:
+        - name: langy
+          image: ghcr.io/simonfrey/langy:latest
+          command: ["langy", "serve"]
+          ports:
+            - containerPort: 8080
+          env:
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: langy.langy-postgres.credentials.postgresql.acid.zalan.do
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: langy.langy-postgres.credentials.postgresql.acid.zalan.do
+                  key: password
+            - name: DATABASE_URL
+              value: "postgres://$(PGUSER):$(PGPASSWORD)@langy-postgres:5432/langy?sslmode=require"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: langy-secrets
+                  key: jwt-secret
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: langy-secrets
+                  key: gemini-api-key

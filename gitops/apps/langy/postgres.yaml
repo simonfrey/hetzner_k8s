@@ -1,0 +1,28 @@
+apiVersion: acid.zalan.do/v1
+kind: postgresql
+metadata:
+  name: langy-postgres
+spec:
+  teamId: langy
+  volume:
+    size: 2Gi
+    storageClass: hcloud-volumes
+  numberOfInstances: 1
+  users:
+    langy: []
+  databases:
+    langy: langy
+  patroni:
+    pg_hba:
+      - local   all all trust
+      - hostssl all all 0.0.0.0/0 md5
+      - host    all all 0.0.0.0/0 md5
+      - hostssl all all ::/0 md5
+      - host    all all ::/0 md5
+  postgresql:
+    version: "16"
+    parameters: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi

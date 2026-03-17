@@ -79,4 +79,26 @@ spec:
     server: https://kubernetes.default.svc
     namespace: simon-frey-com
   {{- include "root-app.syncPolicy" . | nindent 2 }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: simon-frey-com-langy
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+    argocd-image-updater.argoproj.io/image-list: langy=ghcr.io/simonfrey/langy
+    argocd-image-updater.argoproj.io/langy.update-strategy: latest
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: {{ .Values.targetRevision }}
+    path: gitops/apps/langy
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: simon-frey-com
+  {{- include "root-app.syncPolicy" . | nindent 2 }}
 {{- end }}

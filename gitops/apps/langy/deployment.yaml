@@ -15,6 +15,8 @@ spec:
       volumes:
         - name: migrations
           emptyDir: {}
+        - name: health
+          emptyDir: {}
       initContainers:
         - name: copy-migrations
           image: ghcr.io/simonfrey/langy:latest
@@ -74,12 +76,20 @@ spec:
                 secretKeyRef:
                   name: langy-secrets
                   key: gemini-api-key
+          volumeMounts:
+            - name: health
+              mountPath: /tmp/health
+          livenessProbe:
+            exec:
+              command: ["cat", "/tmp/health/healthy"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
         - name: image-watcher
           image: alpine:latest
           command: ["/bin/sh", "-c"]
           args:
             - |
-              HEALTH=/tmp/healthy
+              HEALTH=/tmp/health/healthy
               INTERVAL=60
               get_digest() {
                 TOKEN=$(wget -qO- "https://ghcr.io/token?scope=repository:simonfrey/langy:pull" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
@@ -96,9 +106,12 @@ spec:
                   sleep infinity
                 fi
               done
+          volumeMounts:
+            - name: health
+              mountPath: /tmp/health
           livenessProbe:
             exec:
-              command: ["cat", "/tmp/healthy"]
+              command: ["cat", "/tmp/health/healthy"]
             initialDelaySeconds: 10
             periodSeconds: 10
           resources:

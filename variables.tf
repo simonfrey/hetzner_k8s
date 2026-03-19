@@ -248,6 +248,12 @@ variable "enable_website" {
 # kwatch Configuration
 # ============================================================================
 
+variable "langy_gemini_api_key" {
+  description = "Google Gemini API key for langy app"
+  type        = string
+  sensitive   = true
+}
+
 variable "pushover_webhook_url" {
   description = "Pushover webhook URL for kwatch notifications"
   type        = string

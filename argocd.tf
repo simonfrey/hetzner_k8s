@@ -529,6 +529,29 @@ resource "kubernetes_secret" "website_git_sync_ssh" {
 }
 
 # ============================================================================
+# Langy — secrets (JWT + Gemini API key)
+# ============================================================================
+
+resource "random_password" "langy_jwt" {
+  length  = 64
+  special = true
+}
+
+resource "kubernetes_secret" "langy_secrets" {
+  metadata {
+    name      = "langy-secrets"
+    namespace = kubernetes_namespace.simon_frey_com[0].metadata[0].name
+  }
+
+  data = {
+    jwt-secret     = random_password.langy_jwt.result
+    gemini-api-key = var.langy_gemini_api_key
+  }
+
+  depends_on = [kubernetes_namespace.simon_frey_com]
+}
+
+# ============================================================================
 # I) Plausible Analytics — namespace + secrets
 # ============================================================================
 

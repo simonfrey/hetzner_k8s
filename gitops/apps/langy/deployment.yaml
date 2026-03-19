@@ -74,3 +74,36 @@ spec:
                 secretKeyRef:
                   name: langy-secrets
                   key: gemini-api-key
+        - name: image-watcher
+          image: alpine:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              HEALTH=/tmp/healthy
+              INTERVAL=60
+              get_digest() {
+                TOKEN=$(wget -qO- "https://ghcr.io/token?scope=repository:simonfrey/langy:pull" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+                wget -qS --header="Authorization: Bearer $TOKEN" --header="Accept: application/vnd.oci.image.index.v1+json" \
+                  "https://ghcr.io/v2/simonfrey/langy/manifests/latest" 2>&1 | sed -n 's/.*docker-content-digest: *\(.*\)/\1/p' | tr -d '\r'
+              }
+              INITIAL=$(get_digest)
+              touch $HEALTH
+              while true; do
+                sleep $INTERVAL
+                CURRENT=$(get_digest)
+                if [ -n "$CURRENT" ] && [ "$CURRENT" != "$INITIAL" ]; then
+                  rm -f $HEALTH
+                  sleep infinity
+                fi
+              done
+          livenessProbe:
+            exec:
+              command: ["cat", "/tmp/healthy"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 1m
+              memory: 8Mi
+            limits:
+              memory: 16Mi

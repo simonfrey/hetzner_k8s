@@ -317,6 +317,7 @@ resource "kubernetes_config_map" "kwatch" {
     "config.yaml" = yamlencode({
       maxRecentLogLines              = 20
       ignoreFailedGracefulShutdown   = true
+      ignoreContainerNames           = "image-watcher"
       pvcMonitor = {
         enabled   = true
         interval  = 15

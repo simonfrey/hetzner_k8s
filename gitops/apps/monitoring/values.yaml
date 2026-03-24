@@ -68,6 +68,10 @@ alertmanager:
         - receiver: "null"
           matchers:
             - alertname = "InfoInhibitor"
+        - receiver: "null"
+          matchers:
+            - alertname = "KubePdbNotEnoughHealthyPods"
+            - poddisruptionbudget =~ ".*critical-op-pdb"
     receivers:
       - name: "null"
       - name: pushover
@@ -90,6 +94,7 @@ grafana:
       memory: 128Mi
     limits:
       memory: 256Mi
+      cpu: 500m
   defaultDashboardsEnabled: true
   defaultDashboardsTimezone: utc
   ingress:
@@ -112,6 +117,7 @@ victoria-metrics-operator:
       memory: 64Mi
     limits:
       memory: 256Mi
+      cpu: 500m
 
 # Node exporter (runs on all nodes)
 prometheus-node-exporter:

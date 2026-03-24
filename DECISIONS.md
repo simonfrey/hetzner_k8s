@@ -361,6 +361,16 @@ This makes `terraform apply` fully self-contained — no manual post-deploy step
 - `gitops/root-app/templates/cert-manager.yaml`: Removed tolerations from main, cainjector, and webhook
 - `gitops/root-app/templates/metrics-server.yaml`: Removed tolerations block
 
+## 2026-03-24: Fix flaky CPUThrottlingHigh and KubePdbNotEnoughHealthyPods alerts
+
+**Problem:** Two alerts fire and resolve cyclically every day, creating Pushover notification noise:
+1. **CPUThrottlingHigh** (monitoring namespace) — fires ~10-20x/day. Grafana and vm-operator containers had 200m CPU limits (Helm chart defaults) causing CFS throttling during spikes despite low average usage (5-6m).
+2. **KubePdbNotEnoughHealthyPods** (plausible, simon-frey-com) — fires ~4-6x/day per namespace. Zalando Postgres Operator creates `critical-op-pdb` with `minAvailable: 1` for single-replica clusters. Any momentary unreadiness triggers the alert; the PDB is meaningless for single-instance Postgres.
+
+**Changes:**
+- `gitops/apps/monitoring/values.yaml`: Set explicit `cpu: 500m` limits on grafana and vm-operator (up from chart default 200m) to eliminate throttling while keeping a reasonable bound.
+- `gitops/apps/monitoring/values.yaml`: Added alertmanager route to send `KubePdbNotEnoughHealthyPods` alerts matching `poddisruptionbudget =~ ".*critical-op-pdb"` to the null receiver.
+
 ## 2026-03-11: Fix Plausible ClickHouse + Postgres auth (Round 4)
 
 **Problem:** Two auth failures:

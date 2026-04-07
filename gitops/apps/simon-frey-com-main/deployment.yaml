@@ -41,6 +41,10 @@ spec:
             - name: site-content
               mountPath: /srv/site
               readOnly: true
+            - name: links-env
+              mountPath: /srv/site/current/links/.env
+              subPath: .env
+              readOnly: true
           resources:
             requests:
               cpu: 50m
@@ -79,3 +83,7 @@ spec:
           secret:
             secretName: git-sync-ssh
             defaultMode: 0444
+        - name: links-env
+          secret:
+            secretName: links-env
+            defaultMode: 0440

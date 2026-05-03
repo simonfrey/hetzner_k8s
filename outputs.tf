@@ -102,6 +102,12 @@ output "grafana_password" {
   sensitive   = true
 }
 
+output "browsh_password" {
+  description = "Browsh basic auth password (username: simon)"
+  value       = random_password.browsh.result
+  sensitive   = true
+}
+
 output "website_deploy_key_public" {
   description = "SSH public key to add as GitHub deploy key on simonfrey/simon-frey.com"
   value       = var.enable_website ? tls_private_key.website_deploy_key[0].public_key_openssh : null
@@ -153,6 +159,7 @@ output "summary" {
       terraform output -raw windows_admin_password
       terraform output -raw guacamole_password
       terraform output -raw grafana_password
+      terraform output -raw browsh_password
 
     Security Notes:
     - K8s API (6443) accessible only via WireGuard VPN

@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: browsh
+  namespace: browsh
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.middlewares: browsh-redirect-https@kubernetescrd,browsh-basic-auth@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - browsh.tools.simon-frey.com
+      secretName: browsh-tls
+  rules:
+    - host: browsh.tools.simon-frey.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: browsh
+                port:
+                  number: 4333

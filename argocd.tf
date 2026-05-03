@@ -196,6 +196,11 @@ resource "random_password" "grafana" {
   special = true
 }
 
+resource "random_password" "browsh" {
+  length  = 24
+  special = false
+}
+
 # ============================================================================
 # D) Namespaces and Secrets
 # ============================================================================
@@ -291,6 +296,31 @@ resource "kubernetes_config_map" "guacamole_config" {
       guacamole_password_sha256 = local.guacamole_password_sha256
       windows_admin_password    = random_password.windows_admin.result
     })
+  }
+}
+
+# --- browsh ---
+
+resource "kubernetes_namespace" "browsh" {
+  metadata {
+    name = "browsh"
+  }
+
+  depends_on = [helm_release.cilium]
+}
+
+resource "kubernetes_secret" "browsh_basic_auth" {
+  metadata {
+    name      = "browsh-basic-auth"
+    namespace = kubernetes_namespace.browsh.metadata[0].name
+  }
+
+  data = {
+    users = "simon:${bcrypt(random_password.browsh.result)}"
+  }
+
+  lifecycle {
+    ignore_changes = [data]
   }
 }
 

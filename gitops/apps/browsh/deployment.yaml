@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: browsh
+  namespace: browsh
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: browsh
+  template:
+    metadata:
+      labels:
+        app: browsh
+    spec:
+      containers:
+        - name: browsh
+          image: browsh/browsh:v1.8.3
+          command: ["browsh", "--http-server-mode"]
+          ports:
+            - containerPort: 4333
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1536Mi

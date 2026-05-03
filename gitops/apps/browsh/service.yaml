@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: browsh
+  namespace: browsh
+spec:
+  type: ClusterIP
+  selector:
+    app: browsh
+  ports:
+    - port: 4333
+      targetPort: 4333
+      protocol: TCP

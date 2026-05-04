@@ -32,7 +32,7 @@ spec:
         - name: browsh
           image: browsh/browsh:v1.8.3
           command: ["/shared/ttyd"]
-          args: ["-W", "-p", "7681", "/shared/dtach", "-A", "/tmp/browsh.sock", "-Ez", "/usr/local/bin/browsh"]
+          args: ["-W", "-p", "7681", "/shared/dtach", "-A", "/tmp/browsh.sock", "-Ez", "/app/bin/browsh"]
           ports:
             - containerPort: 7681
               protocol: TCP

@@ -23,8 +23,11 @@ spec:
       containers:
         - name: browsh
           image: browsh/browsh:v1.8.3
-          command: ["/shared/ttyd"]
-          args: ["-W", "-p", "7681", "browsh"]
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              apt-get update && apt-get install -y --no-install-recommends tmux &&
+              exec /shared/ttyd -W -p 7681 tmux new-session -A -s browsh browsh
           ports:
             - containerPort: 7681
               protocol: TCP

@@ -7,8 +7,6 @@ metadata:
     cert-manager.io/cluster-issuer: letsencrypt-prod
     traefik.ingress.kubernetes.io/router.middlewares: browsh-redirect-https@kubernetescrd,browsh-basic-auth@kubernetescrd
     traefik.ingress.kubernetes.io/service.serversscheme: http
-    traefik.ingress.kubernetes.io/router.transport.respondingTimeouts.readTimeout: "0"
-    traefik.ingress.kubernetes.io/router.transport.respondingTimeouts.idleTimeout: "0"
 spec:
   ingressClassName: traefik
   tls:

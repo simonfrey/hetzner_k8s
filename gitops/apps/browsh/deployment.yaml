@@ -32,13 +32,21 @@ spec:
         - name: browsh
           image: browsh/browsh:v1.8.3
           command: ["/shared/ttyd"]
-          args: ["-W", "-p", "7681", "/bin/bash", "-c", "/shared/zellij attach browsh 2>/dev/null || /shared/zellij -s browsh -- browsh"]
+          env:
+            - name: SHELL
+              value: /usr/local/bin/browsh
+            - name: ZELLIJ_CONFIG_DIR
+              value: /config
+          args: ["-W", "-p", "7681", "/shared/zellij", "attach", "--create", "browsh"]
           ports:
             - containerPort: 7681
               protocol: TCP
           volumeMounts:
             - name: shared
               mountPath: /shared
+            - name: zellij-config
+              mountPath: /config
+              readOnly: true
           resources:
             requests:
               cpu: 200m
@@ -49,3 +57,6 @@ spec:
       volumes:
         - name: shared
           emptyDir: {}
+        - name: zellij-config
+          configMap:
+            name: zellij-config

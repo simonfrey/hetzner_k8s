@@ -8,6 +8,7 @@ spec:
   selector:
     app: browsh
   ports:
-    - port: 7681
+    - name: http
+      port: 7681
       targetPort: 7681
       protocol: TCP

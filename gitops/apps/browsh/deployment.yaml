@@ -20,11 +20,11 @@ spec:
           volumeMounts:
             - name: shared
               mountPath: /shared
-        - name: fetch-tmux
+        - name: fetch-zellij
           image: alpine:3.20
           command: ["sh", "-c"]
           args:
-            - apk add --no-cache tmux && cp /usr/bin/tmux /shared/tmux
+            - wget -O- https://github.com/zellij-org/zellij/releases/latest/download/zellij-x86_64-unknown-linux-musl.tar.gz | tar -C /shared -xz
           volumeMounts:
             - name: shared
               mountPath: /shared
@@ -32,7 +32,7 @@ spec:
         - name: browsh
           image: browsh/browsh:v1.8.3
           command: ["/shared/ttyd"]
-          args: ["-W", "-p", "7681", "/shared/tmux", "new-session", "-A", "-s", "browsh", "browsh"]
+          args: ["-W", "-p", "7681", "/bin/bash", "-c", "/shared/zellij attach browsh 2>/dev/null || /shared/zellij -s browsh -- browsh"]
           ports:
             - containerPort: 7681
               protocol: TCP

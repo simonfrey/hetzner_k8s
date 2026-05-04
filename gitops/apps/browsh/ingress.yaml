@@ -22,4 +22,4 @@ spec:
               service:
                 name: browsh
                 port:
-                  number: 4333
+                  number: 7681

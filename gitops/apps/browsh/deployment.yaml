@@ -13,13 +13,24 @@ spec:
       labels:
         app: browsh
     spec:
+      initContainers:
+        - name: fetch-ttyd
+          image: tsl0922/ttyd:1.7.7
+          command: ["cp", "/usr/bin/ttyd", "/shared/ttyd"]
+          volumeMounts:
+            - name: shared
+              mountPath: /shared
       containers:
         - name: browsh
           image: browsh/browsh:v1.8.3
-          command: ["browsh", "--http-server-mode"]
+          command: ["/shared/ttyd"]
+          args: ["-W", "-p", "7681", "browsh"]
           ports:
-            - containerPort: 4333
+            - containerPort: 7681
               protocol: TCP
+          volumeMounts:
+            - name: shared
+              mountPath: /shared
           resources:
             requests:
               cpu: 200m
@@ -27,3 +38,6 @@ spec:
             limits:
               cpu: "1"
               memory: 1536Mi
+      volumes:
+        - name: shared
+          emptyDir: {}

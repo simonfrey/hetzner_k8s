@@ -20,11 +20,11 @@ spec:
           volumeMounts:
             - name: shared
               mountPath: /shared
-        - name: fetch-zellij
+        - name: build-dtach
           image: alpine:3.20
           command: ["sh", "-c"]
           args:
-            - wget -O- https://github.com/zellij-org/zellij/releases/latest/download/zellij-x86_64-unknown-linux-musl.tar.gz | tar -C /shared -xz
+            - apk add --no-cache gcc musl-dev make && wget -O- https://github.com/crigler/dtach/archive/refs/tags/v0.9.tar.gz | tar -xz && cd dtach-0.9 && cc -static -o /shared/dtach dtach.c
           volumeMounts:
             - name: shared
               mountPath: /shared
@@ -32,21 +32,13 @@ spec:
         - name: browsh
           image: browsh/browsh:v1.8.3
           command: ["/shared/ttyd"]
-          env:
-            - name: SHELL
-              value: /usr/local/bin/browsh
-            - name: ZELLIJ_CONFIG_DIR
-              value: /config
-          args: ["-W", "-p", "7681", "/shared/zellij", "attach", "--create", "browsh"]
+          args: ["-W", "-p", "7681", "/shared/dtach", "-A", "/tmp/browsh.sock", "-Ez", "browsh"]
           ports:
             - containerPort: 7681
               protocol: TCP
           volumeMounts:
             - name: shared
               mountPath: /shared
-            - name: zellij-config
-              mountPath: /config
-              readOnly: true
           resources:
             requests:
               cpu: 200m
@@ -57,6 +49,3 @@ spec:
       volumes:
         - name: shared
           emptyDir: {}
-        - name: zellij-config
-          configMap:
-            name: zellij-config

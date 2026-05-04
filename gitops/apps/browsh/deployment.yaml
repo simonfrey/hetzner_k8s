@@ -20,14 +20,19 @@ spec:
           volumeMounts:
             - name: shared
               mountPath: /shared
+        - name: fetch-tmux
+          image: alpine:3.20
+          command: ["sh", "-c"]
+          args:
+            - apk add --no-cache tmux && cp /usr/bin/tmux /shared/tmux
+          volumeMounts:
+            - name: shared
+              mountPath: /shared
       containers:
         - name: browsh
           image: browsh/browsh:v1.8.3
-          command: ["/bin/bash", "-c"]
-          args:
-            - |
-              apt-get update && apt-get install -y --no-install-recommends tmux &&
-              exec /shared/ttyd -W -p 7681 tmux new-session -A -s browsh browsh
+          command: ["/shared/ttyd"]
+          args: ["-W", "-p", "7681", "/shared/tmux", "new-session", "-A", "-s", "browsh", "browsh"]
           ports:
             - containerPort: 7681
               protocol: TCP

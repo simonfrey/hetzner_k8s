@@ -393,6 +393,6 @@ Also: `random_password.plausible_postgres` and `kubernetes_secret.plausible_post
 
 **Problem:** Hetzner is deprecating the "datacenter" API property in favor of "location" for Primary IPs and Servers, effective 2026-07-01. HCCM versions older than v1.30.1 rely on the deprecated property and will crash after the API change, preventing node initialization, node cleanup, and Load Balancer configuration.
 
-**Fix:** Bumped `targetRevision` from `"1.29.2"` to `"1.30.1"` in `gitops/root-app/templates/ccm.yaml`. No other value changes required — the chart's default values are identical between versions.
+**Fix:** Bumped `targetRevision` from `"1.29.2"` to `"1.30.1"` in `gitops/root-app/templates/ccm.yaml`. Also removed the manual `HCLOUD_NETWORK` env entry from the helm values — `networking.enabled: true` already injects this variable, causing a duplicate that blocked ArgoCD syncs with a ComparisonError since 2026-03-05.
 
 **Reference:** https://github.com/hetznercloud/hcloud-cloud-controller-manager/issues/1146

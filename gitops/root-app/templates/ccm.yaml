@@ -31,11 +31,6 @@ spec:
               secretKeyRef:
                 name: hcloud
                 key: token
-          HCLOUD_NETWORK:
-            valueFrom:
-              secretKeyRef:
-                name: hcloud
-                key: network
   destination:
     server: https://kubernetes.default.svc
     namespace: kube-system

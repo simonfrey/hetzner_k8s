@@ -5,9 +5,12 @@ on:
     branches: [main]
     paths:
       - "docker/claude-code/**"
+      - ".github/workflows/claude-code-image.yaml"
   pull_request:
     paths:
       - "docker/claude-code/**"
+      - ".github/workflows/claude-code-image.yaml"
+  workflow_dispatch: # Allow manual trigger
 
 jobs:
   build-and-test:

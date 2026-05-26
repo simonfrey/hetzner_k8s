@@ -448,8 +448,44 @@ resource "helm_release" "argocd_root_app" {
     name  = "enableWebsite"
     value = tostring(var.enable_website)
   }
+  set {
+    name  = "enableClaudeCode"
+    value = tostring(var.enable_claude_code)
+  }
 
   depends_on = [helm_release.argocd]
+}
+
+# ============================================================================
+# G) Claude Code — SSH keypair + namespace + authorized_keys secret
+# ============================================================================
+
+resource "tls_private_key" "claude_code_ssh" {
+  count     = var.enable_claude_code ? 1 : 0
+  algorithm = "ED25519"
+}
+
+resource "kubernetes_namespace" "claude_code" {
+  count = var.enable_claude_code ? 1 : 0
+
+  metadata {
+    name = "claude-code"
+  }
+
+  depends_on = [helm_release.cilium]
+}
+
+resource "kubernetes_secret" "claude_ssh_authorized_keys" {
+  count = var.enable_claude_code ? 1 : 0
+
+  metadata {
+    name      = "claude-ssh-authorized-keys"
+    namespace = kubernetes_namespace.claude_code[0].metadata[0].name
+  }
+
+  data = {
+    authorized_keys = tls_private_key.claude_code_ssh[0].public_key_openssh
+  }
 }
 
 # ============================================================================

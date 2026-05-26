@@ -1,0 +1,26 @@
+Port 2222
+ListenAddress 127.0.0.1
+
+# Host keys (persisted on PVC across restarts)
+HostKey /home/claude/.ssh-host-keys/ssh_host_ed25519_key
+
+# Authentication
+PasswordAuthentication no
+PubkeyAuthentication yes
+PermitRootLogin no
+AllowUsers claude
+AuthorizedKeysFile /etc/ssh/authorized_keys/authorized_keys
+
+# StrictModes off because the authorized_keys directory is a Kubernetes
+# Secret mount owned by root, not by the claude user.
+StrictModes no
+
+# No PAM (running as non-root)
+UsePAM no
+
+# Runtime files in writable locations (emptyDir mounts)
+PidFile /tmp/sshd.pid
+
+# Logging to stderr (captured by kubectl logs)
+SyslogFacility AUTH
+LogLevel INFO

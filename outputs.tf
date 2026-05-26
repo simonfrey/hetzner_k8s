@@ -125,6 +125,17 @@ output "wordpress_db_password" {
   sensitive   = true
 }
 
+output "claude_code_ssh_private_key" {
+  description = "SSH private key for claude-in-k8s script (save to ~/.ssh/claude-k8s)"
+  value       = var.enable_claude_code ? tls_private_key.claude_code_ssh[0].private_key_openssh : null
+  sensitive   = true
+}
+
+output "claude_code_ssh_public_key" {
+  description = "SSH public key deployed to the Claude Code pod"
+  value       = var.enable_claude_code ? tls_private_key.claude_code_ssh[0].public_key_openssh : null
+}
+
 output "argocd_initial_admin_password" {
   description = "Command to retrieve ArgoCD initial admin password"
   value       = "kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d"
@@ -160,6 +171,9 @@ output "summary" {
       terraform output -raw guacamole_password
       terraform output -raw grafana_password
       terraform output -raw browsh_password
+
+    Claude Code (if enabled):
+      terraform output -raw claude_code_ssh_private_key > ~/.ssh/claude-k8s && chmod 600 ~/.ssh/claude-k8s
 
     Security Notes:
     - K8s API (6443) accessible only via WireGuard VPN

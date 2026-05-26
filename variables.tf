@@ -244,6 +244,12 @@ variable "enable_website" {
   default     = false
 }
 
+variable "enable_claude_code" {
+  description = "Deploy persistent Claude Code pod with SSH for mutagen file sync"
+  type        = bool
+  default     = false
+}
+
 # ============================================================================
 # kwatch Configuration
 # ============================================================================

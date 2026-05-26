@@ -1,0 +1,121 @@
+name: Claude Code Image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docker/claude-code/**"
+      - "gitops/apps/claude-code/**"
+  pull_request:
+    paths:
+      - "docker/claude-code/**"
+      - "gitops/apps/claude-code/**"
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Build image locally (don't push yet)
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: docker/claude-code
+          load: true
+          tags: claude-code:test
+
+      # Spin up Kind cluster for smoke tests
+      - name: Create Kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: test
+
+      # Create StorageClass matching production name so PVC manifests work unchanged
+      - name: Create hcloud-volumes StorageClass
+        run: |
+          kubectl apply -f - <<'EOF'
+          apiVersion: storage.k8s.io/v1
+          kind: StorageClass
+          metadata:
+            name: hcloud-volumes
+          provisioner: rancher.io/local-path
+          reclaimPolicy: Delete
+          volumeBindingMode: WaitForFirstConsumer
+          EOF
+
+      - name: Load image into Kind
+        run: kind load docker-image claude-code:test --name test
+
+      # Create namespace and test SSH keypair
+      - name: Setup namespace and secrets
+        run: |
+          kubectl create namespace claude-code
+          ssh-keygen -t ed25519 -f /tmp/test-key -N ""
+          kubectl -n claude-code create secret generic claude-ssh-authorized-keys \
+            --from-file=authorized_keys=/tmp/test-key.pub
+
+      - name: Deploy manifests
+        run: |
+          kubectl apply -f gitops/apps/claude-code/
+          kubectl -n claude-code set image deployment/claude-code \
+            claude-code=claude-code:test
+          kubectl -n claude-code rollout status deployment/claude-code --timeout=120s
+
+      - name: Smoke tests
+        run: |
+          set -euo pipefail
+          POD=$(kubectl -n claude-code get pod -l app=claude-code \
+            -o jsonpath='{.items[0].metadata.name}')
+
+          echo "--- Claude Code installed ---"
+          kubectl -n claude-code exec "$POD" -- claude --version
+
+          echo "--- Running as non-root (UID 10001) ---"
+          UID_VAL=$(kubectl -n claude-code exec "$POD" -- id -u)
+          [ "$UID_VAL" = "10001" ] || { echo "FAIL: UID=$UID_VAL"; exit 1; }
+
+          echo "--- sshd listening on 2222 ---"
+          kubectl -n claude-code exec "$POD" -- ss -tlnp | grep 2222 || \
+            { echo "FAIL: sshd not on 2222"; exit 1; }
+
+          echo "--- No service account token ---"
+          kubectl -n claude-code exec "$POD" -- \
+            test ! -d /var/run/secrets/kubernetes.io/serviceaccount || \
+            { echo "FAIL: SA token mounted"; exit 1; }
+
+          echo "--- SSH pubkey auth works ---"
+          kubectl -n claude-code port-forward "$POD" 2222:2222 &
+          PF_PID=$!
+          sleep 3
+          ssh -i /tmp/test-key -p 2222 \
+            -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            claude@localhost whoami | grep claude || \
+            { kill $PF_PID 2>/dev/null; echo "FAIL: SSH auth"; exit 1; }
+          kill $PF_PID 2>/dev/null
+
+          echo "All smoke tests passed!"
+
+      # Push to GHCR only on merge to main
+      - name: Login to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v6
+        with:
+          context: docker/claude-code
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/claude-code:latest
+            ghcr.io/${{ github.repository }}/claude-code:${{ github.sha }}

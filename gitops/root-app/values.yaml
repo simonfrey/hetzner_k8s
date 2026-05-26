@@ -6,3 +6,4 @@ targetRevision: "main"
 enableMonitoring: false
 enableWindows: true
 enableWebsite: false
+enableClaudeCode: false

@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: claude-code
+  namespace: claude-code
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: claude-code
+  template:
+    metadata:
+      labels:
+        app: claude-code
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: claude-code
+          image: ghcr.io/simonfrey/hetzner_k8s/claude-code:latest
+          ports:
+            - containerPort: 2222
+              protocol: TCP
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+          volumeMounts:
+            - name: claude-home
+              mountPath: /home/claude
+            - name: claude-workspaces
+              mountPath: /workspaces
+            - name: tmp
+              mountPath: /tmp
+            - name: run-sshd
+              mountPath: /run/sshd
+            - name: authorized-keys
+              mountPath: /etc/ssh/authorized_keys
+              readOnly: true
+      volumes:
+        - name: claude-home
+          persistentVolumeClaim:
+            claimName: claude-home
+        - name: claude-workspaces
+          persistentVolumeClaim:
+            claimName: claude-workspaces
+        - name: tmp
+          emptyDir: {}
+        - name: run-sshd
+          emptyDir: {}
+        - name: authorized-keys
+          secret:
+            secretName: claude-ssh-authorized-keys
+            defaultMode: 0444

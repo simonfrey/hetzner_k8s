@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+#
+# claude-in-k8s — attach to a persistent Claude Code pod from any local directory.
+#
+# Syncs the current working directory to the pod via mutagen (over SSH over
+# kubectl port-forward), then opens an interactive Claude session. Conversations
+# resume per-project because the remote workspace path is derived from a stable
+# hash of the local directory.
+#
+# Prerequisites:
+#   - kubectl configured for the target cluster
+#   - mutagen installed (brew install mutagen-io/mutagen/mutagen)
+#   - SSH private key at ~/.ssh/claude-k8s (from: terraform output -raw claude_code_ssh_private_key)
+#
+set -euo pipefail
+
+# --- Configuration (override via environment) ---
+NS="${CCK8S_NAMESPACE:-claude-code}"
+DEPLOY="${CCK8S_DEPLOY:-claude-code}"
+CONTAINER="${CCK8S_CONTAINER:-claude-code}"
+SSH_KEY="${CCK8S_SSH_KEY:-$HOME/.ssh/claude-k8s}"
+SSH_PORT="${CCK8S_SSH_PORT:-2222}"
+
+# --- Derived values ---
+SESSION_ID=$(printf '%s' "$PWD" | sha256sum | cut -c1-12)
+REMOTE_PATH="/workspaces/${SESSION_ID}"
+SESSION_NAME="cck8s-${SESSION_ID}"
+LOCAL_PORT=""
+PF_PID=""
+
+cleanup() {
+  echo ""
+  echo "Cleaning up..."
+  # Terminate mutagen sync session
+  if mutagen sync list "$SESSION_NAME" &>/dev/null; then
+    mutagen sync terminate "$SESSION_NAME" 2>/dev/null || true
+  fi
+  # Kill port-forward
+  if [ -n "$PF_PID" ] && kill -0 "$PF_PID" 2>/dev/null; then
+    kill "$PF_PID" 2>/dev/null || true
+    wait "$PF_PID" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+
+# --- Preflight checks ---
+for cmd in kubectl mutagen ssh; do
+  command -v "$cmd" &>/dev/null || { echo "Error: $cmd not found in PATH"; exit 1; }
+done
+
+if [ ! -f "$SSH_KEY" ]; then
+  echo "Error: SSH key not found at $SSH_KEY"
+  echo "Run: terraform output -raw claude_code_ssh_private_key > $SSH_KEY && chmod 600 $SSH_KEY"
+  exit 1
+fi
+
+# --- Find the pod ---
+echo "Finding claude-code pod..."
+POD=$(kubectl -n "$NS" get pod -l "app=$DEPLOY" --field-selector=status.phase=Running \
+  -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) || true
+
+if [ -z "$POD" ]; then
+  echo "Error: No running claude-code pod found in namespace $NS"
+  exit 1
+fi
+echo "Pod: $POD"
+
+# --- Ensure remote workspace directory exists ---
+kubectl -n "$NS" exec "$POD" -c "$CONTAINER" -- mkdir -p "$REMOTE_PATH"
+
+# --- Start port-forward ---
+# Pick a random free port
+LOCAL_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("",0)); print(s.getsockname()[1]); s.close()')
+echo "Port-forwarding localhost:${LOCAL_PORT} -> pod:${SSH_PORT}..."
+kubectl -n "$NS" port-forward "pod/$POD" "${LOCAL_PORT}:${SSH_PORT}" &>/dev/null &
+PF_PID=$!
+
+# Wait for port-forward to be ready
+for i in $(seq 1 20); do
+  if nc -z localhost "$LOCAL_PORT" 2>/dev/null; then
+    break
+  fi
+  if ! kill -0 "$PF_PID" 2>/dev/null; then
+    echo "Error: port-forward process died"
+    exit 1
+  fi
+  sleep 0.5
+done
+
+if ! nc -z localhost "$LOCAL_PORT" 2>/dev/null; then
+  echo "Error: port-forward not ready after 10s"
+  exit 1
+fi
+
+# --- Start mutagen sync ---
+echo "Syncing $PWD -> pod:$REMOTE_PATH (session: $SESSION_NAME)..."
+SSH_FLAGS="-i ${SSH_KEY} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+
+if mutagen sync list "$SESSION_NAME" &>/dev/null; then
+  echo "Resuming existing mutagen session..."
+  mutagen sync resume "$SESSION_NAME" 2>/dev/null || true
+else
+  mutagen sync create \
+    --name "$SESSION_NAME" \
+    --sync-mode=two-way-resolved \
+    --ignore=node_modules \
+    --ignore=.venv \
+    --ignore=__pycache__ \
+    --ignore=.git \
+    --default-file-mode=0644 \
+    --default-directory-mode=0755 \
+    --configuration-ssh-command="ssh $SSH_FLAGS -p ${LOCAL_PORT}" \
+    "$PWD" \
+    "claude@localhost:${REMOTE_PATH}"
+fi
+
+# Wait for initial sync to complete
+echo "Waiting for initial sync..."
+mutagen sync flush "$SESSION_NAME"
+echo "Sync ready."
+
+# --- Attach interactive Claude session ---
+echo ""
+echo "Project: $PWD"
+echo "Remote:  $REMOTE_PATH"
+echo "Session: $SESSION_ID"
+echo "---"
+echo ""
+
+kubectl -n "$NS" exec -it -c "$CONTAINER" "$POD" -- \
+  bash -lc "cd '${REMOTE_PATH}' && claude -c --dangerously-skip-permissions"

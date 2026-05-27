@@ -4,8 +4,8 @@
 #
 # Syncs the current working directory to the pod via mutagen (using kubectl
 # exec/cp transport from k8s-mutagen-transport), then opens an interactive
-# Claude session. Conversations resume per-project thanks to stable workspace
-# paths derived from the local directory hash.
+# Claude session inside tmux. If the network drops, Claude keeps running in
+# the pod — just re-run claude-in-k8s from the same directory to reattach.
 #
 # Prerequisites:
 #   - kubectl configured for the target cluster
@@ -26,11 +26,17 @@ TRANSPORT_PATH="${CCK8S_TRANSPORT_PATH:-$HOME/.local/share/k8s-mutagen-transport
 SESSION_ID=$(printf '%s' "$PWD" | sha256sum | cut -c1-12)
 REMOTE_PATH="/workspaces/${SESSION_ID}"
 SESSION_NAME="cck8s-${SESSION_ID}"
+TMUX_SESSION="claude-${SESSION_ID}"
 
 cleanup() {
   echo ""
-  echo "Cleaning up..."
-  if mutagen sync list "$SESSION_NAME" &>/dev/null; then
+  # If Claude is still running in tmux (user detached / network died),
+  # leave mutagen sync active for reconnection.
+  if kubectl -n "$NS" exec "$POD" -c "$CONTAINER" -- \
+      tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
+    echo "Claude still running in pod. Run 'claude-in-k8s' from the same directory to reattach."
+  else
+    echo "Cleaning up..."
     mutagen sync terminate "$SESSION_NAME" 2>/dev/null || true
   fi
 }
@@ -50,8 +56,6 @@ if [ ! -d "$TRANSPORT_PATH" ] || [ ! -f "$TRANSPORT_PATH/ssh" ]; then
 fi
 
 # --- Ensure mutagen daemon uses the k8s transport ---
-# The daemon inherits MUTAGEN_SSH_PATH from when it was started. If it's not
-# set or points elsewhere, restart the daemon with the correct value.
 CURRENT_SSH_PATH=$(mutagen daemon run -- printenv MUTAGEN_SSH_PATH 2>/dev/null || true)
 if [ "$CURRENT_SSH_PATH" != "$TRANSPORT_PATH" ]; then
   echo "Configuring mutagen daemon for k8s transport..."
@@ -74,14 +78,14 @@ echo "Pod: $POD"
 # --- Ensure remote workspace directory exists ---
 kubectl -n "$NS" exec "$POD" -c "$CONTAINER" -- mkdir -p "$REMOTE_PATH"
 
-# --- Start mutagen sync ---
+# --- Start or resume mutagen sync ---
 MUTAGEN_BETA="k8s--${POD}.${NS}:${REMOTE_PATH}"
-echo "Syncing $PWD -> $MUTAGEN_BETA (session: $SESSION_NAME)..."
 
 if mutagen sync list "$SESSION_NAME" &>/dev/null; then
-  echo "Resuming existing mutagen session..."
+  echo "Resuming mutagen sync..."
   mutagen sync resume "$SESSION_NAME" 2>/dev/null || true
 else
+  echo "Starting mutagen sync..."
   mutagen sync create \
     --name "$SESSION_NAME" \
     --sync-mode=two-way-resolved \
@@ -95,18 +99,24 @@ else
     "$MUTAGEN_BETA"
 fi
 
-# Wait for initial sync to complete
-echo "Waiting for initial sync..."
+echo "Waiting for sync..."
 mutagen sync flush "$SESSION_NAME"
 echo "Sync ready."
-
-# --- Attach interactive Claude session ---
-echo ""
-echo "Project: $PWD"
-echo "Remote:  $REMOTE_PATH"
-echo "Session: $SESSION_ID"
-echo "---"
 echo ""
 
-kubectl -n "$NS" exec -it -c "$CONTAINER" "$POD" -- \
-  bash -lc "cd '${REMOTE_PATH}' && claude -c --dangerously-skip-permissions"
+# --- Attach or create tmux session ---
+if kubectl -n "$NS" exec "$POD" -c "$CONTAINER" -- \
+    tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
+  echo "Reattaching to existing Claude session..."
+  kubectl -n "$NS" exec -it -c "$CONTAINER" "$POD" -- \
+    tmux attach-session -t "$TMUX_SESSION"
+else
+  echo "Project: $PWD"
+  echo "Remote:  $REMOTE_PATH"
+  echo "Session: $SESSION_ID"
+  echo "---"
+  echo ""
+  kubectl -n "$NS" exec -it -c "$CONTAINER" "$POD" -- \
+    tmux new-session -s "$TMUX_SESSION" \
+    "cd '${REMOTE_PATH}' && (claude -c --dangerously-skip-permissions 2>/dev/null || claude --dangerously-skip-permissions); echo 'Claude exited. Press Enter to close.'; read"
+fi

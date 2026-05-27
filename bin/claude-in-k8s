@@ -30,6 +30,14 @@ TRANSPORT_PATH="${CCK8S_TRANSPORT_PATH:-$HOME/.local/share/k8s-mutagen-transport
 KUBECTL_RETRIES="${CCK8S_KUBECTL_RETRIES:-5}"
 FLUSH_TIMEOUT="${CCK8S_FLUSH_TIMEOUT:-60}"
 
+# --- Ensure KUBECONFIG is set (mutagen daemon inherits this) ---
+if [ -z "${KUBECONFIG:-}" ]; then
+  echo "Error: KUBECONFIG is not set."
+  echo "Export it before running:  export KUBECONFIG=/path/to/.kubeconfig"
+  exit 1
+fi
+export KUBECONFIG
+
 # --- Derived values ---
 SESSION_ID=$(printf '%s' "$PWD" | sha256sum | cut -c1-12)
 REMOTE_PATH="/workspaces/${SESSION_ID}"
@@ -94,9 +102,10 @@ if [ ! -d "$TRANSPORT_PATH" ] || [ ! -f "$TRANSPORT_PATH/ssh" ]; then
   exit 1
 fi
 
-# --- Ensure mutagen daemon is running with k8s transport ---
+# --- Ensure mutagen daemon is running with correct transport + kubeconfig ---
 export MUTAGEN_SSH_PATH="$TRANSPORT_PATH"
 MARKER_FILE="${XDG_RUNTIME_DIR:-/tmp}/claude-in-k8s-mutagen-configured"
+MARKER_VALUE="${TRANSPORT_PATH}:${KUBECONFIG}"
 
 # Check if daemon is actually alive (marker file alone isn't enough)
 DAEMON_ALIVE=false
@@ -105,11 +114,11 @@ if mutagen daemon register &>/dev/null || mutagen sync list &>/dev/null; then
 fi
 
 if [ "$DAEMON_ALIVE" = false ] || [ ! -f "$MARKER_FILE" ] || \
-   [ "$(cat "$MARKER_FILE" 2>/dev/null)" != "$TRANSPORT_PATH" ]; then
-  echo "Starting mutagen daemon with k8s transport..."
+   [ "$(cat "$MARKER_FILE" 2>/dev/null)" != "$MARKER_VALUE" ]; then
+  echo "Starting mutagen daemon with k8s transport (kubeconfig: $KUBECONFIG)..."
   mutagen daemon stop 2>/dev/null || true
   mutagen daemon start
-  printf '%s' "$TRANSPORT_PATH" > "$MARKER_FILE"
+  printf '%s' "$MARKER_VALUE" > "$MARKER_FILE"
 fi
 
 # --- Find the pod (with retries for transient API server failures) ---

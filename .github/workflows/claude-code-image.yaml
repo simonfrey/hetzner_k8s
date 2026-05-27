@@ -39,6 +39,8 @@ jobs:
           # Generate a test SSH keypair
           ssh-keygen -t ed25519 -f /tmp/test-key -N ""
           mkdir -p /tmp/claude-home /tmp/authorized_keys
+          # Docker doesn't have K8s fsGroup — fix ownership for UID 10001
+          sudo chown 10001:10001 /tmp/claude-home
           cp /tmp/test-key.pub /tmp/authorized_keys/authorized_keys
 
           # In K8s, sshd listens on 127.0.0.1 and kubectl port-forward reaches
@@ -60,6 +62,11 @@ jobs:
           # Wait for sshd to start
           for i in $(seq 1 15); do
             if docker exec claude-test ss -tlnp 2>/dev/null | grep -q 2222; then break; fi
+            if ! docker inspect claude-test --format='{{.State.Running}}' | grep -q true; then
+              echo "Container crashed! Logs:"
+              docker logs claude-test
+              exit 1
+            fi
             sleep 1
           done
 

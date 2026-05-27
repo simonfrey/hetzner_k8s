@@ -1,5 +1,13 @@
 # Decisions
 
+## 2026-05-27: Fix liveness probe killing Claude Code pod (exit code 137)
+
+**Problem:** The liveness probe used `pgrep -x sleep` but `procps` (which provides `pgrep`) was not installed in the container image. Every 30s the probe failed with "pgrep: not found", and after 3 failures Kubernetes sent SIGKILL to the container (exit code 137). This caused the pod to restart repeatedly, killing active Claude sessions.
+
+**Fix:**
+- Changed liveness probe to `kill -0 1` (shell builtin, checks PID 1 is alive — no external tools needed)
+- Added `procps` package to the Dockerfile for future tooling needs
+
 ## 2026-03-11: Add CLICKHOUSE_PASSWORD to plausible-credentials secret
 
 **Problem:** Plausible's `init-database` init container expects a `CLICKHOUSE_PASSWORD` key in the `plausible-credentials` secret. The key was previously removed, but the pascaliske/plausible Helm chart (v2.0.0) still references it.

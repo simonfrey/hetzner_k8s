@@ -37,7 +37,7 @@ spec:
               command:
                 - /bin/sh
                 - -c
-                - "pgrep -x sleep > /dev/null"
+                - "kill -0 1"
             initialDelaySeconds: 10
             periodSeconds: 30
             timeoutSeconds: 5

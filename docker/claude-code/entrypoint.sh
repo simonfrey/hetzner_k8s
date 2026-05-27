@@ -1,7 +1,11 @@
 #!/bin/bash
 set -e
 
-HOST_KEY="/home/claude/.ssh-host-keys/ssh_host_ed25519_key"
+HOST_KEY_DIR="/home/claude/.ssh-host-keys"
+HOST_KEY="${HOST_KEY_DIR}/ssh_host_ed25519_key"
+
+# Ensure directory exists (volume mount replaces /home/claude contents)
+mkdir -p "$HOST_KEY_DIR"
 
 # Generate host key on first boot (persisted on PVC)
 if [ ! -f "$HOST_KEY" ]; then

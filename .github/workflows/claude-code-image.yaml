@@ -36,10 +36,16 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Generate a test SSH keypair and host key directory
+          # Generate a test SSH keypair
           ssh-keygen -t ed25519 -f /tmp/test-key -N ""
-          mkdir -p /tmp/claude-home/.ssh-host-keys /tmp/authorized_keys
+          mkdir -p /tmp/claude-home /tmp/authorized_keys
           cp /tmp/test-key.pub /tmp/authorized_keys/authorized_keys
+
+          # In K8s, sshd listens on 127.0.0.1 and kubectl port-forward reaches
+          # loopback directly. Docker -p maps to eth0, not loopback, so we
+          # override ListenAddress for CI only.
+          sed 's/ListenAddress 127.0.0.1/ListenAddress 0.0.0.0/' \
+            docker/claude-code/sshd_config > /tmp/ci-sshd_config
 
           # Run the container the same way K8s will (non-root, read-only rootfs)
           docker run -d --name claude-test \
@@ -47,6 +53,7 @@ jobs:
             --tmpfs /tmp --tmpfs /run/sshd \
             -v /tmp/claude-home:/home/claude \
             -v /tmp/authorized_keys:/etc/ssh/authorized_keys:ro \
+            -v /tmp/ci-sshd_config:/etc/ssh/sshd_config:ro \
             -p 2222:2222 \
             claude-code:test
 

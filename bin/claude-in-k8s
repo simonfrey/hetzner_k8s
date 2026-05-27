@@ -7,6 +7,12 @@
 # Claude session inside tmux. If the network drops, Claude keeps running in
 # the pod — just re-run claude-in-k8s from the same directory to reattach.
 #
+# Network resilience:
+#   - mutagen auto-reconnects file sync every ~15s after network drops
+#   - tmux in the pod keeps Claude running regardless of kubectl disconnects
+#   - Re-running this script detects existing sessions and reattaches
+#   - Stale sessions (pod restarted) are automatically cleaned up
+#
 # Prerequisites:
 #   - kubectl configured for the target cluster
 #   - mutagen installed (yay -S mutagen.io-bin)
@@ -21,26 +27,59 @@ NS="${CCK8S_NAMESPACE:-claude-code}"
 DEPLOY="${CCK8S_DEPLOY:-claude-code}"
 CONTAINER="${CCK8S_CONTAINER:-claude-code}"
 TRANSPORT_PATH="${CCK8S_TRANSPORT_PATH:-$HOME/.local/share/k8s-mutagen-transport}"
+KUBECTL_RETRIES="${CCK8S_KUBECTL_RETRIES:-5}"
+FLUSH_TIMEOUT="${CCK8S_FLUSH_TIMEOUT:-60}"
 
 # --- Derived values ---
 SESSION_ID=$(printf '%s' "$PWD" | sha256sum | cut -c1-12)
 REMOTE_PATH="/workspaces/${SESSION_ID}"
 SESSION_NAME="cck8s-${SESSION_ID}"
 TMUX_SESSION="claude-${SESSION_ID}"
+POD=""
+
+# --- Helper: retry kubectl commands with exponential backoff ---
+kubectl_retry() {
+  local attempt=1 delay=2
+  while [ "$attempt" -le "$KUBECTL_RETRIES" ]; do
+    if "$@" 2>/dev/null; then
+      return 0
+    fi
+    if [ "$attempt" -eq "$KUBECTL_RETRIES" ]; then
+      # Last attempt — show errors
+      "$@"
+      return $?
+    fi
+    echo "  kubectl attempt $attempt/$KUBECTL_RETRIES failed, retrying in ${delay}s..."
+    sleep "$delay"
+    delay=$((delay * 2))
+    attempt=$((attempt + 1))
+  done
+}
 
 cleanup() {
   echo ""
-  # If Claude is still running in tmux (user detached / network died),
-  # leave mutagen sync active for reconnection.
-  if kubectl -n "$NS" exec "$POD" -c "$CONTAINER" -- \
-      tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
+  if [ -z "$POD" ]; then
+    echo "Pod was never found; nothing to clean up."
+    return
+  fi
+
+  # Try to check if Claude is still running in tmux (with timeout).
+  # If kubectl fails (network outage), assume Claude is still alive.
+  TMUX_CHECK=$(timeout 10 kubectl -n "$NS" exec "$POD" -c "$CONTAINER" -- \
+      tmux -u has-session -t "$TMUX_SESSION" 2>&1; echo "EXIT:$?")
+
+  if echo "$TMUX_CHECK" | grep -q "EXIT:0"; then
     echo "Claude still running in pod. Run 'claude-in-k8s' from the same directory to reattach."
-  else
-    echo "Cleaning up..."
+  elif echo "$TMUX_CHECK" | grep -q "EXIT:1"; then
+    echo "Claude session ended. Cleaning up sync..."
     mutagen sync terminate "$SESSION_NAME" 2>/dev/null || true
+  else
+    echo "Lost connection to pod. Claude likely still running."
+    echo "Run 'claude-in-k8s' from the same directory to reattach."
   fi
 }
 trap cleanup EXIT
+trap 'exit 130' INT TERM
 
 # --- Preflight checks ---
 for cmd in kubectl mutagen python3; do
@@ -55,40 +94,84 @@ if [ ! -d "$TRANSPORT_PATH" ] || [ ! -f "$TRANSPORT_PATH/ssh" ]; then
   exit 1
 fi
 
-# --- Ensure mutagen daemon uses the k8s transport ---
-CURRENT_SSH_PATH=$(mutagen daemon run -- printenv MUTAGEN_SSH_PATH 2>/dev/null || true)
-if [ "$CURRENT_SSH_PATH" != "$TRANSPORT_PATH" ]; then
-  echo "Configuring mutagen daemon for k8s transport..."
+# --- Ensure mutagen daemon is running with k8s transport ---
+export MUTAGEN_SSH_PATH="$TRANSPORT_PATH"
+MARKER_FILE="${XDG_RUNTIME_DIR:-/tmp}/claude-in-k8s-mutagen-configured"
+
+# Check if daemon is actually alive (marker file alone isn't enough)
+DAEMON_ALIVE=false
+if mutagen daemon register &>/dev/null || mutagen sync list &>/dev/null; then
+  DAEMON_ALIVE=true
+fi
+
+if [ "$DAEMON_ALIVE" = false ] || [ ! -f "$MARKER_FILE" ] || \
+   [ "$(cat "$MARKER_FILE" 2>/dev/null)" != "$TRANSPORT_PATH" ]; then
+  echo "Starting mutagen daemon with k8s transport..."
   mutagen daemon stop 2>/dev/null || true
-  export MUTAGEN_SSH_PATH="$TRANSPORT_PATH"
   mutagen daemon start
+  printf '%s' "$TRANSPORT_PATH" > "$MARKER_FILE"
 fi
 
-# --- Find the pod ---
+# --- Find the pod (with retries for transient API server failures) ---
 echo "Finding claude-code pod..."
-POD=$(kubectl -n "$NS" get pod -l "app=$DEPLOY" --field-selector=status.phase=Running \
-  -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) || true
-
-if [ -z "$POD" ]; then
-  echo "Error: No running claude-code pod found in namespace $NS"
-  exit 1
-fi
+for attempt in $(seq 1 "$KUBECTL_RETRIES"); do
+  POD=$(kubectl -n "$NS" get pod -l "app=$DEPLOY" --field-selector=status.phase=Running \
+    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) || true
+  if [ -n "$POD" ]; then
+    break
+  fi
+  if [ "$attempt" -eq "$KUBECTL_RETRIES" ]; then
+    echo "Error: No running claude-code pod found in namespace $NS"
+    echo "       (tried $KUBECTL_RETRIES times)"
+    POD=""  # ensure cleanup doesn't try to reach it
+    exit 1
+  fi
+  echo "  Waiting for pod... (attempt $attempt/$KUBECTL_RETRIES)"
+  sleep 3
+done
 echo "Pod: $POD"
 
+# --- Clean up stale mutagen session if pod changed ---
+if mutagen sync list "$SESSION_NAME" &>/dev/null; then
+  EXISTING_BETA=$(mutagen sync list "$SESSION_NAME" 2>/dev/null | grep -oP 'k8s--\K[^.]+' | head -1) || true
+  if [ -n "$EXISTING_BETA" ] && [ "$EXISTING_BETA" != "$POD" ]; then
+    echo "Pod changed ($EXISTING_BETA -> $POD). Cleaning up stale sync session..."
+    mutagen sync terminate "$SESSION_NAME" 2>/dev/null || true
+  fi
+fi
+
 # --- Ensure remote workspace directory exists ---
-kubectl -n "$NS" exec "$POD" -c "$CONTAINER" -- mkdir -p "$REMOTE_PATH"
+kubectl_retry kubectl -n "$NS" exec "$POD" -c "$CONTAINER" -- mkdir -p "$REMOTE_PATH"
 
 # --- Start or resume mutagen sync ---
 MUTAGEN_BETA="k8s--${POD}.${NS}:${REMOTE_PATH}"
 
 if mutagen sync list "$SESSION_NAME" &>/dev/null; then
   echo "Resuming mutagen sync..."
-  mutagen sync resume "$SESSION_NAME" 2>/dev/null || true
+  if ! mutagen sync resume "$SESSION_NAME" 2>&1; then
+    echo "Resume failed. Recreating sync session..."
+    mutagen sync terminate "$SESSION_NAME" 2>/dev/null || true
+    mutagen sync create \
+      --name "$SESSION_NAME" \
+      --sync-mode=two-way-resolved \
+      --watch-mode=force-poll \
+      --scan-mode=accelerated \
+      --ignore=node_modules \
+      --ignore=.venv \
+      --ignore=__pycache__ \
+      --ignore=.git \
+      --default-file-mode=0644 \
+      --default-directory-mode=0755 \
+      "$PWD" \
+      "$MUTAGEN_BETA"
+  fi
 else
   echo "Starting mutagen sync..."
   mutagen sync create \
     --name "$SESSION_NAME" \
     --sync-mode=two-way-resolved \
+    --watch-mode=force-poll \
+    --scan-mode=accelerated \
     --ignore=node_modules \
     --ignore=.venv \
     --ignore=__pycache__ \
@@ -99,24 +182,29 @@ else
     "$MUTAGEN_BETA"
 fi
 
-echo "Waiting for sync..."
-mutagen sync flush "$SESSION_NAME"
+echo "Waiting for initial sync (timeout ${FLUSH_TIMEOUT}s)..."
+if ! timeout "$FLUSH_TIMEOUT" mutagen sync flush "$SESSION_NAME"; then
+  echo "Warning: Sync flush timed out after ${FLUSH_TIMEOUT}s. Continuing anyway — files may still be syncing."
+fi
 echo "Sync ready."
 echo ""
 
 # --- Attach or create tmux session ---
-if kubectl -n "$NS" exec "$POD" -c "$CONTAINER" -- \
-    tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
+if kubectl_retry kubectl -n "$NS" exec "$POD" -c "$CONTAINER" -- \
+    tmux -u has-session -t "$TMUX_SESSION"; then
   echo "Reattaching to existing Claude session..."
+  echo "(Use Ctrl+B, D to detach without stopping Claude)"
+  echo ""
   kubectl -n "$NS" exec -it -c "$CONTAINER" "$POD" -- \
-    tmux attach-session -t "$TMUX_SESSION"
+    tmux -u attach-session -t "$TMUX_SESSION"
 else
   echo "Project: $PWD"
   echo "Remote:  $REMOTE_PATH"
   echo "Session: $SESSION_ID"
+  echo "(Use Ctrl+B, D to detach without stopping Claude)"
   echo "---"
   echo ""
   kubectl -n "$NS" exec -it -c "$CONTAINER" "$POD" -- \
-    tmux new-session -s "$TMUX_SESSION" \
+    tmux -u new-session -s "$TMUX_SESSION" \
     "cd '${REMOTE_PATH}' && (claude -c --dangerously-skip-permissions 2>/dev/null || claude --dangerously-skip-permissions); echo 'Claude exited. Press Enter to close.'; read"
 fi

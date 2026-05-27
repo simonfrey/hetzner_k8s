@@ -396,3 +396,29 @@ Also: `random_password.plausible_postgres` and `kubernetes_secret.plausible_post
 **Fix:** Bumped `targetRevision` from `"1.29.2"` to `"1.30.1"` in `gitops/root-app/templates/ccm.yaml`. Also removed the manual `HCLOUD_NETWORK` env entry from the helm values — `networking.enabled: true` already injects this variable, causing a duplicate that blocked ArgoCD syncs with a ComparisonError since 2026-03-05.
 
 **Reference:** https://github.com/hetznercloud/hcloud-cloud-controller-manager/issues/1146
+
+## 2026-05-27: Harden Claude Code remote setup for network resilience
+
+**Problem:** The `claude-in-k8s` script had multiple failure modes under network instability:
+- `mutagen sync flush` hangs forever if network drops mid-sync (no timeout)
+- `mutagen sync resume` errors silently swallowed (`2>/dev/null || true`)
+- Stale mutagen sessions after pod restart (pod name changes, old session points to dead pod)
+- No retry logic for transient kubectl failures (API server slow, DNS hiccup)
+- POD variable unset in cleanup trap if network drops before pod discovery
+- Mutagen daemon death not detected (only marker file checked, not daemon liveness)
+- No liveness probe — hung containers appear healthy to Kubernetes
+- No PodDisruptionBudget — pod can be evicted without warning
+
+**Research findings:**
+- Mutagen auto-reconnects every ~15s (hardcoded, not configurable) — sufficient for most drops
+- `kubectl exec` has zero reconnect capability — tmux is the correct pattern
+- `--watch-mode=force-poll` recommended for kubectl transport (native FS watchers unreliable across exec)
+- `--scan-mode=accelerated` speeds up post-reconnect resyncs using snapshot-based scanning
+- `mutagen sync resume` can force-kick a session out of its 15s reconnect wait
+
+**Changes:**
+- `bin/claude-in-k8s`: Added `kubectl_retry()` with exponential backoff, 60s timeout on `mutagen sync flush`, stale session detection (auto-terminates if pod name changed), mutagen daemon liveness check (not just marker file), POD guard in cleanup, `timeout 10` on cleanup kubectl exec, `--watch-mode=force-poll` and `--scan-mode=accelerated` on sync create, resume error handling with fallback to recreate, user hint about Ctrl+B D to detach
+- `gitops/apps/claude-code/deployment.yaml`: Added liveness probe (`pgrep -x sleep`), bumped limits to 2 CPU / 4Gi (Claude Code agents can be memory-hungry)
+- `gitops/apps/claude-code/pdb.yaml` (new): PodDisruptionBudget with `minAvailable: 1`
+- `docker/claude-code/Dockerfile`: Added tmux.conf with 50k line scrollback, no escape delay, 256-color
+- `docker/claude-code/tmux.conf` (new): Persistent session config

@@ -32,13 +32,22 @@ spec:
             capabilities:
               drop:
                 - ALL
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "pgrep -x sleep > /dev/null"
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
           resources:
             requests:
               cpu: 100m
               memory: 256Mi
             limits:
-              cpu: "1"
-              memory: 2Gi
+              memory: 4Gi
           volumeMounts:
             - name: claude-home
               mountPath: /home/claude

@@ -1,0 +1,10 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: claude-code
+  namespace: claude-code
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: claude-code

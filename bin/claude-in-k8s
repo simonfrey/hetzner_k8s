@@ -2,15 +2,17 @@
 #
 # claude-in-k8s — attach to a persistent Claude Code pod from any local directory.
 #
-# Syncs the current working directory to the pod via mutagen (over SSH over
-# kubectl port-forward), then opens an interactive Claude session. Conversations
-# resume per-project because the remote workspace path is derived from a stable
-# hash of the local directory.
+# Syncs the current working directory to the pod via mutagen (using kubectl
+# exec/cp transport from k8s-mutagen-transport), then opens an interactive
+# Claude session. Conversations resume per-project thanks to stable workspace
+# paths derived from the local directory hash.
 #
 # Prerequisites:
 #   - kubectl configured for the target cluster
-#   - mutagen installed (brew install mutagen-io/mutagen/mutagen)
-#   - SSH private key at ~/.ssh/claude-k8s (from: terraform output -raw claude_code_ssh_private_key)
+#   - mutagen installed (yay -S mutagen.io-bin)
+#   - k8s-mutagen-transport cloned and set up:
+#       git clone https://github.com/rooty0/k8s-mutagen-transport ~/.local/share/k8s-mutagen-transport
+#       cd ~/.local/share/k8s-mutagen-transport && uv sync
 #
 set -euo pipefail
 
@@ -18,45 +20,44 @@ set -euo pipefail
 NS="${CCK8S_NAMESPACE:-claude-code}"
 DEPLOY="${CCK8S_DEPLOY:-claude-code}"
 CONTAINER="${CCK8S_CONTAINER:-claude-code}"
-SSH_KEY="${CCK8S_SSH_KEY:-$HOME/.ssh/claude-k8s}"
-SSH_PORT="${CCK8S_SSH_PORT:-2222}"
+TRANSPORT_PATH="${CCK8S_TRANSPORT_PATH:-$HOME/.local/share/k8s-mutagen-transport}"
 
 # --- Derived values ---
 SESSION_ID=$(printf '%s' "$PWD" | sha256sum | cut -c1-12)
 REMOTE_PATH="/workspaces/${SESSION_ID}"
 SESSION_NAME="cck8s-${SESSION_ID}"
-LOCAL_PORT=""
-PF_PID=""
-SSH_WRAPPER_DIR=""
 
 cleanup() {
   echo ""
   echo "Cleaning up..."
-  # Terminate mutagen sync session
   if mutagen sync list "$SESSION_NAME" &>/dev/null; then
     mutagen sync terminate "$SESSION_NAME" 2>/dev/null || true
-  fi
-  # Kill port-forward
-  if [ -n "$PF_PID" ] && kill -0 "$PF_PID" 2>/dev/null; then
-    kill "$PF_PID" 2>/dev/null || true
-    wait "$PF_PID" 2>/dev/null || true
-  fi
-  # Remove SSH wrapper
-  if [ -n "$SSH_WRAPPER_DIR" ] && [ -d "$SSH_WRAPPER_DIR" ]; then
-    rm -rf "$SSH_WRAPPER_DIR"
   fi
 }
 trap cleanup EXIT
 
 # --- Preflight checks ---
-for cmd in kubectl mutagen ssh; do
+for cmd in kubectl mutagen python3; do
   command -v "$cmd" &>/dev/null || { echo "Error: $cmd not found in PATH"; exit 1; }
 done
 
-if [ ! -f "$SSH_KEY" ]; then
-  echo "Error: SSH key not found at $SSH_KEY"
-  echo "Run: terraform output -raw claude_code_ssh_private_key > $SSH_KEY && chmod 600 $SSH_KEY"
+if [ ! -d "$TRANSPORT_PATH" ] || [ ! -f "$TRANSPORT_PATH/ssh" ]; then
+  echo "Error: k8s-mutagen-transport not found at $TRANSPORT_PATH"
+  echo "Install it:"
+  echo "  git clone https://github.com/rooty0/k8s-mutagen-transport $TRANSPORT_PATH"
+  echo "  cd $TRANSPORT_PATH && uv sync"
   exit 1
+fi
+
+# --- Ensure mutagen daemon uses the k8s transport ---
+# The daemon inherits MUTAGEN_SSH_PATH from when it was started. If it's not
+# set or points elsewhere, restart the daemon with the correct value.
+CURRENT_SSH_PATH=$(mutagen daemon run -- printenv MUTAGEN_SSH_PATH 2>/dev/null || true)
+if [ "$CURRENT_SSH_PATH" != "$TRANSPORT_PATH" ]; then
+  echo "Configuring mutagen daemon for k8s transport..."
+  mutagen daemon stop 2>/dev/null || true
+  export MUTAGEN_SSH_PATH="$TRANSPORT_PATH"
+  mutagen daemon start
 fi
 
 # --- Find the pod ---
@@ -73,44 +74,9 @@ echo "Pod: $POD"
 # --- Ensure remote workspace directory exists ---
 kubectl -n "$NS" exec "$POD" -c "$CONTAINER" -- mkdir -p "$REMOTE_PATH"
 
-# --- Start port-forward ---
-# Pick a random free port
-LOCAL_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("",0)); print(s.getsockname()[1]); s.close()')
-echo "Port-forwarding localhost:${LOCAL_PORT} -> pod:${SSH_PORT}..."
-kubectl -n "$NS" port-forward "pod/$POD" "${LOCAL_PORT}:${SSH_PORT}" &>/dev/null &
-PF_PID=$!
-
-# Wait for port-forward to be ready
-for i in $(seq 1 20); do
-  if nc -z localhost "$LOCAL_PORT" 2>/dev/null; then
-    break
-  fi
-  if ! kill -0 "$PF_PID" 2>/dev/null; then
-    echo "Error: port-forward process died"
-    exit 1
-  fi
-  sleep 0.5
-done
-
-if ! nc -z localhost "$LOCAL_PORT" 2>/dev/null; then
-  echo "Error: port-forward not ready after 10s"
-  exit 1
-fi
-
-# --- Set up SSH wrapper for mutagen ---
-# Mutagen uses the system SSH binary. MUTAGEN_SSH_PATH points it to a
-# directory containing wrapper scripts that inject our key and options.
-SSH_WRAPPER_DIR=$(mktemp -d)
-cat > "$SSH_WRAPPER_DIR/ssh" <<SSHEOF
-#!/bin/bash
-exec /usr/bin/ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "\$@"
-SSHEOF
-chmod +x "$SSH_WRAPPER_DIR/ssh"
-cp "$SSH_WRAPPER_DIR/ssh" "$SSH_WRAPPER_DIR/scp"
-export MUTAGEN_SSH_PATH="$SSH_WRAPPER_DIR"
-
 # --- Start mutagen sync ---
-echo "Syncing $PWD -> pod:$REMOTE_PATH (session: $SESSION_NAME)..."
+MUTAGEN_BETA="k8s--${POD}.${NS}:${REMOTE_PATH}"
+echo "Syncing $PWD -> $MUTAGEN_BETA (session: $SESSION_NAME)..."
 
 if mutagen sync list "$SESSION_NAME" &>/dev/null; then
   echo "Resuming existing mutagen session..."
@@ -126,7 +92,7 @@ else
     --default-file-mode=0644 \
     --default-directory-mode=0755 \
     "$PWD" \
-    "claude@localhost:${LOCAL_PORT}:${REMOTE_PATH}"
+    "$MUTAGEN_BETA"
 fi
 
 # Wait for initial sync to complete

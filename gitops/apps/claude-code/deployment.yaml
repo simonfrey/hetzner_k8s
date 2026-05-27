@@ -26,9 +26,6 @@ spec:
       containers:
         - name: claude-code
           image: ghcr.io/simonfrey/hetzner_k8s/claude-code:latest
-          ports:
-            - containerPort: 2222
-              protocol: TCP
           securityContext:
             readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
@@ -49,11 +46,6 @@ spec:
               mountPath: /workspaces
             - name: tmp
               mountPath: /tmp
-            - name: run-sshd
-              mountPath: /run/sshd
-            - name: authorized-keys
-              mountPath: /etc/ssh/authorized_keys
-              readOnly: true
       volumes:
         - name: claude-home
           persistentVolumeClaim:
@@ -63,9 +55,3 @@ spec:
             claimName: claude-workspaces
         - name: tmp
           emptyDir: {}
-        - name: run-sshd
-          emptyDir: {}
-        - name: authorized-keys
-          secret:
-            secretName: claude-ssh-authorized-keys
-            defaultMode: 0444

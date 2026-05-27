@@ -10,7 +10,7 @@ on:
     paths:
       - "docker/claude-code/**"
       - ".github/workflows/claude-code-image.yaml"
-  workflow_dispatch: # Allow manual trigger
+  workflow_dispatch:
 
 jobs:
   build-and-test:
@@ -23,7 +23,6 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      # Build image locally for testing
       - name: Build image
         uses: docker/build-push-action@v6
         with:
@@ -31,44 +30,27 @@ jobs:
           load: true
           tags: claude-code:test
 
-      # Smoke test the container directly (no Kubernetes — ArgoCD handles deployment)
       - name: Smoke test
         run: |
           set -euo pipefail
 
-          # Generate a test SSH keypair
-          ssh-keygen -t ed25519 -f /tmp/test-key -N ""
-          mkdir -p /tmp/claude-home /tmp/authorized_keys
-          # Docker doesn't have K8s fsGroup — fix ownership for UID 10001
-          sudo chown 10001:10001 /tmp/claude-home
-          cp /tmp/test-key.pub /tmp/authorized_keys/authorized_keys
+          mkdir -p /tmp/claude-home
 
-          # In K8s, sshd listens on 127.0.0.1 and kubectl port-forward reaches
-          # loopback directly. Docker -p maps to eth0, not loopback, so we
-          # override ListenAddress for CI only.
-          sed 's/ListenAddress 127.0.0.1/ListenAddress 0.0.0.0/' \
-            docker/claude-code/sshd_config > /tmp/ci-sshd_config
-
-          # Run the container the same way K8s will (non-root, read-only rootfs)
+          # Run the container with same constraints as K8s
           docker run -d --name claude-test \
             --read-only \
-            --tmpfs /tmp --tmpfs /run/sshd \
+            --tmpfs /tmp \
+            --user 10001:10001 \
             -v /tmp/claude-home:/home/claude \
-            -v /tmp/authorized_keys:/etc/ssh/authorized_keys:ro \
-            -v /tmp/ci-sshd_config:/etc/ssh/sshd_config:ro \
-            -p 2222:2222 \
             claude-code:test
 
-          # Wait for sshd to start
-          for i in $(seq 1 15); do
-            if docker exec claude-test ss -tlnp 2>/dev/null | grep -q 2222; then break; fi
-            if ! docker inspect claude-test --format='{{.State.Running}}' | grep -q true; then
-              echo "Container crashed! Logs:"
-              docker logs claude-test
-              exit 1
-            fi
-            sleep 1
-          done
+          # Wait for container to be running
+          sleep 2
+          if ! docker inspect claude-test --format='{{.State.Running}}' | grep -q true; then
+            echo "Container crashed! Logs:"
+            docker logs claude-test
+            exit 1
+          fi
 
           echo "--- Claude Code installed ---"
           docker exec claude-test claude --version
@@ -77,15 +59,9 @@ jobs:
           UID_VAL=$(docker exec claude-test id -u)
           [ "$UID_VAL" = "10001" ] || { echo "FAIL: UID=$UID_VAL"; exit 1; }
 
-          echo "--- sshd listening on 2222 ---"
-          docker exec claude-test ss -tlnp | grep 2222 || \
-            { echo "FAIL: sshd not on 2222"; exit 1; }
-
-          echo "--- SSH pubkey auth works ---"
-          ssh -i /tmp/test-key -p 2222 \
-            -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-            claude@localhost whoami | grep claude || \
-            { echo "FAIL: SSH auth"; exit 1; }
+          echo "--- tar available (needed by kubectl cp) ---"
+          docker exec claude-test tar --version > /dev/null || \
+            { echo "FAIL: tar not found"; exit 1; }
 
           echo "All smoke tests passed!"
           docker rm -f claude-test

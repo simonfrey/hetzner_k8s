@@ -27,6 +27,7 @@ REMOTE_PATH="/workspaces/${SESSION_ID}"
 SESSION_NAME="cck8s-${SESSION_ID}"
 LOCAL_PORT=""
 PF_PID=""
+SSH_WRAPPER_DIR=""
 
 cleanup() {
   echo ""
@@ -39,6 +40,10 @@ cleanup() {
   if [ -n "$PF_PID" ] && kill -0 "$PF_PID" 2>/dev/null; then
     kill "$PF_PID" 2>/dev/null || true
     wait "$PF_PID" 2>/dev/null || true
+  fi
+  # Remove SSH wrapper
+  if [ -n "$SSH_WRAPPER_DIR" ] && [ -d "$SSH_WRAPPER_DIR" ]; then
+    rm -rf "$SSH_WRAPPER_DIR"
   fi
 }
 trap cleanup EXIT
@@ -92,9 +97,20 @@ if ! nc -z localhost "$LOCAL_PORT" 2>/dev/null; then
   exit 1
 fi
 
+# --- Set up SSH wrapper for mutagen ---
+# Mutagen uses the system SSH binary. MUTAGEN_SSH_PATH points it to a
+# directory containing wrapper scripts that inject our key and options.
+SSH_WRAPPER_DIR=$(mktemp -d)
+cat > "$SSH_WRAPPER_DIR/ssh" <<SSHEOF
+#!/bin/bash
+exec /usr/bin/ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "\$@"
+SSHEOF
+chmod +x "$SSH_WRAPPER_DIR/ssh"
+cp "$SSH_WRAPPER_DIR/ssh" "$SSH_WRAPPER_DIR/scp"
+export MUTAGEN_SSH_PATH="$SSH_WRAPPER_DIR"
+
 # --- Start mutagen sync ---
 echo "Syncing $PWD -> pod:$REMOTE_PATH (session: $SESSION_NAME)..."
-SSH_FLAGS="-i ${SSH_KEY} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
 
 if mutagen sync list "$SESSION_NAME" &>/dev/null; then
   echo "Resuming existing mutagen session..."
@@ -109,9 +125,8 @@ else
     --ignore=.git \
     --default-file-mode=0644 \
     --default-directory-mode=0755 \
-    --configuration-ssh-command="ssh $SSH_FLAGS -p ${LOCAL_PORT}" \
     "$PWD" \
-    "claude@localhost:${REMOTE_PATH}"
+    "claude@localhost:${LOCAL_PORT}:${REMOTE_PATH}"
 fi
 
 # Wait for initial sync to complete

@@ -101,4 +101,4 @@ spec:
         - name: links-env
           secret:
             secretName: links-env
-            defaultMode: 0440
+            defaultMode: 0444

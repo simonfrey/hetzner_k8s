@@ -31,12 +31,24 @@ spec:
               readOnly: true
           securityContext:
             runAsUser: 65533
+        - name: seed-cache
+          image: php:8.2-apache
+          command: ["/bin/bash", "-c", "cp -rn /srv/site/current/links/cache/* /srv/links-cache/ 2>/dev/null; cp -rn /srv/site/current/links/imgs/* /srv/links-cache/imgs/ 2>/dev/null; chown -R www-data:www-data /srv/links-cache; true"]
+          volumeMounts:
+            - name: site-content
+              mountPath: /srv/site
+              readOnly: true
+            - name: links-cache
+              mountPath: /srv/links-cache
       containers:
         - name: apache-php
           image: php:8.2-apache
           command: ["/bin/bash", "-c", "a2enmod headers rewrite && sed -i 's|/var/www/html|/srv/site/current|g' /etc/apache2/sites-available/000-default.conf /etc/apache2/apache2.conf && echo '<Directory /srv/site/current>\n    AllowOverride All\n    Require all granted\n</Directory>' >> /etc/apache2/apache2.conf && apache2-foreground"]
           ports:
             - containerPort: 80
+          env:
+            - name: LINKS_CACHE_DIR
+              value: /srv/links-cache
           volumeMounts:
             - name: site-content
               mountPath: /srv/site
@@ -45,6 +57,8 @@ spec:
               mountPath: /srv/site/current/links/.env
               subPath: .env
               readOnly: true
+            - name: links-cache
+              mountPath: /srv/links-cache
           resources:
             requests:
               cpu: 50m
@@ -78,6 +92,8 @@ spec:
               memory: 128Mi
       volumes:
         - name: site-content
+          emptyDir: {}
+        - name: links-cache
           emptyDir: {}
         - name: git-ssh
           secret:

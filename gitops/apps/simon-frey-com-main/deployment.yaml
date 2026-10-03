@@ -54,8 +54,7 @@ spec:
               mountPath: /srv/site
               readOnly: true
             - name: links-env
-              mountPath: /srv/site/current/links/.env
-              subPath: .env
+              mountPath: /srv/links-env
               readOnly: true
             - name: links-cache
               mountPath: /srv/links-cache

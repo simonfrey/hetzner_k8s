@@ -93,8 +93,9 @@ foreach ($episodes as $episode) {
 $allItems = [];
 foreach ($allTuesdays as $k => $tuesday) {
     $dateKey = $tuesday->format('Y-m-d');
-    $newItem = $episodesByDate[$dateKey]['fullItem'];
-    if (!isset($episodesByDate[$dateKey]))  {
+    if (isset($episodesByDate[$dateKey])) {
+        $newItem = $episodesByDate[$dateKey]['fullItem'];
+    } else {
 	// Only have an episode for the last thursday
 	if ($k != count($allTuesdays)-1){
 		continue;

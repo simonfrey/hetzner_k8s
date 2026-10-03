@@ -1,0 +1,37 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: podcast-feeds
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.middlewares: simon-frey-com-redirect-https@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - startuppiratenfeed.simon-frey.com
+      secretName: startuppiratenfeed-simon-frey-com-tls
+    - hosts:
+        - swpodcastfeed.simon-frey.com
+      secretName: swpodcastfeed-simon-frey-com-tls
+  rules:
+    - host: startuppiratenfeed.simon-frey.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: podcast-feeds
+                port:
+                  number: 80
+    - host: swpodcastfeed.simon-frey.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: podcast-feeds
+                port:
+                  number: 80

@@ -1,0 +1,91 @@
+name: Podcast Feeds Image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docker/podcast-feeds/**"
+      - ".github/workflows/podcast-feeds-image.yaml"
+  pull_request:
+    paths:
+      - "docker/podcast-feeds/**"
+      - ".github/workflows/podcast-feeds-image.yaml"
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: docker/podcast-feeds
+          load: true
+          tags: podcast-feeds:test
+
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+
+          docker run -d --name pf-test -p 8080:80 podcast-feeds:test
+          sleep 3
+
+          if ! docker inspect pf-test --format='{{.State.Running}}' | grep -q true; then
+            echo "Container crashed! Logs:"
+            docker logs pf-test
+            exit 1
+          fi
+
+          # Test startuppiratenfeed responds with XML
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: startuppiratenfeed.simon-frey.com" http://localhost:8080/)
+          echo "startuppiratenfeed status: $STATUS"
+          [ "$STATUS" = "200" ] || { echo "FAIL: expected 200"; docker logs pf-test; exit 1; }
+
+          # Test swpodcastfeed responds with XML
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: swpodcastfeed.simon-frey.com" http://localhost:8080/)
+          echo "swpodcastfeed status: $STATUS"
+          [ "$STATUS" = "200" ] || { echo "FAIL: expected 200"; docker logs pf-test; exit 1; }
+
+          # Test archive endpoints
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: startuppiratenfeed.simon-frey.com" http://localhost:8080/archive.php)
+          echo "startuppiratenfeed archive status: $STATUS"
+          [ "$STATUS" = "200" ] || { echo "FAIL: expected 200"; docker logs pf-test; exit 1; }
+
+          # Verify no acast URLs remain in feed output
+          FEED=$(curl -s -H "Host: swpodcastfeed.simon-frey.com" http://localhost:8080/)
+          if echo "$FEED" | grep -q "feeds.acast.com"; then
+            echo "FAIL: feed still contains acast URLs"
+            exit 1
+          fi
+          if echo "$FEED" | grep -q "sphinx.acast.com"; then
+            echo "FAIL: feed still contains acast audio URLs"
+            exit 1
+          fi
+
+          echo "All smoke tests passed!"
+          docker rm -f pf-test
+
+      - name: Login to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v6
+        with:
+          context: docker/podcast-feeds
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/podcast-feeds:latest
+            ghcr.io/${{ github.repository }}/podcast-feeds:${{ github.sha }}

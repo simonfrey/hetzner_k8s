@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: podcast-feeds
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: podcast-feeds
+  template:
+    metadata:
+      labels:
+        app: podcast-feeds
+    spec:
+      containers:
+        - name: podcast-feeds
+          image: ghcr.io/simonfrey/hetzner_k8s/podcast-feeds:latest
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+              httpHeaders:
+                - name: Host
+                  value: swpodcastfeed.simon-frey.com
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+              httpHeaders:
+                - name: Host
+                  value: swpodcastfeed.simon-frey.com
+            initialDelaySeconds: 3
+            periodSeconds: 10

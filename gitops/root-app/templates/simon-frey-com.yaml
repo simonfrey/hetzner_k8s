@@ -99,4 +99,24 @@ spec:
     server: https://kubernetes.default.svc
     namespace: simon-frey-com
   {{- include "root-app.syncPolicy" . | nindent 2 }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: podcast-feeds
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: {{ .Values.targetRevision }}
+    path: gitops/apps/podcast-feeds
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: simon-frey-com
+  {{- include "root-app.syncPolicy" . | nindent 2 }}
 {{- end }}

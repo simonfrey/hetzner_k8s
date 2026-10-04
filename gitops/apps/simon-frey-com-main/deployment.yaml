@@ -43,7 +43,7 @@ spec:
       containers:
         - name: apache-php
           image: php:8.2-apache
-          command: ["/bin/bash", "-c", "a2enmod headers rewrite && sed -i 's|/var/www/html|/srv/site/current|g' /etc/apache2/sites-available/000-default.conf /etc/apache2/apache2.conf && echo '<Directory /srv/site/current>\n    AllowOverride All\n    Require all granted\n</Directory>' >> /etc/apache2/apache2.conf && apache2-foreground"]
+          command: ["/bin/bash", "-c", "apt-get update -qq && apt-get install -y -qq libpng-dev libjpeg62-turbo-dev libfreetype6-dev >/dev/null 2>&1 && docker-php-ext-configure gd --with-freetype --with-jpeg >/dev/null 2>&1 && docker-php-ext-install -j$(nproc) gd >/dev/null 2>&1 && a2enmod headers rewrite && sed -i 's|/var/www/html|/srv/site/current|g' /etc/apache2/sites-available/000-default.conf /etc/apache2/apache2.conf && echo '<Directory /srv/site/current>\n    AllowOverride All\n    Require all granted\n</Directory>' >> /etc/apache2/apache2.conf && apache2-foreground"]
           ports:
             - containerPort: 80
           env:

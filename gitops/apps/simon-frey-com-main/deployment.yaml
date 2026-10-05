@@ -33,7 +33,7 @@ spec:
             runAsUser: 65533
         - name: seed-cache
           image: php:8.2-apache
-          command: ["/bin/bash", "-c", "cp -rn /srv/site/current/links/cache/* /srv/links-cache/ 2>/dev/null; cp -rn /srv/site/current/links/imgs/* /srv/links-cache/imgs/ 2>/dev/null; chown -R www-data:www-data /srv/links-cache; true"]
+          command: ["/bin/bash", "-c", "cp -an /srv/site/current/links/cache/* /srv/links-cache/ 2>/dev/null; cp -an /srv/site/current/links/imgs/* /srv/links-cache/imgs/ 2>/dev/null; chown -R www-data:www-data /srv/links-cache; true"]
           volumeMounts:
             - name: site-content
               mountPath: /srv/site
@@ -93,7 +93,8 @@ spec:
         - name: site-content
           emptyDir: {}
         - name: links-cache
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: links-cache-pvc
         - name: git-ssh
           secret:
             secretName: git-sync-ssh

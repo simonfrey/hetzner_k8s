@@ -1,4 +1,5 @@
-FROM php:8.2-apache
+# Pinned to a patch release so upgrades are explicit (8.2.35 fixes CVE-2026-109618/109619 "php2shell")
+FROM php:8.2.35-apache
 
 RUN a2enmod rewrite headers
 

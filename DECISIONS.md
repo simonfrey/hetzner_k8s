@@ -430,3 +430,18 @@ Also: `random_password.plausible_postgres` and `kubernetes_secret.plausible_post
 - `gitops/apps/claude-code/pdb.yaml` (new): PodDisruptionBudget with `minAvailable: 1`
 - `docker/claude-code/Dockerfile`: Added tmux.conf with 50k line scrollback, no escape delay, 256-color
 - `docker/claude-code/tmux.conf` (new): Persistent session config
+
+## 2026-10-22: Upgrade PHP to 8.2.35 for "php2shell" (CVE-2026-109618, CVE-2026-109619)
+
+**Problem:** On 2026-10-21 PHP released critical security fixes for two unauthenticated remote code execution flaws (CVSS v4.0 9.2), nicknamed "php2shell". CVE-2026-109618 is RCE via out-of-memory corruption. CVE-2026-109619 is RCE via stale global state that survives across requests on the same worker. Risk is highest for mod_php, which is exactly what the official `php:*-apache` images use. Exploitation in the wild has been reported. Fixed versions: 8.2.35, 8.3.36, 8.4.27, 8.5.12.
+
+**Fix:**
+- `gitops/apps/simon-frey-com-main/deployment.yaml`: `php:8.2-apache` -> `php:8.2.35-apache` (both the `seed-cache` init container and `apache-php`). Pinning the exact patch tag forces a new image pull; the floating `8.2-apache` tag would have stayed cached on nodes (`IfNotPresent`) and kept running the vulnerable build.
+- `docker/podcast-feeds/Dockerfile`: `FROM php:8.2.35-apache`. CI rebuilds and pushes `:latest`.
+- `gitops/apps/podcast-feeds/deployment.yaml`: added pod template annotation `php-version: "8.2.35"` so ArgoCD rolls the pod and re-pulls `:latest`. Bump it on future base image changes.
+
+**Verified locally:** `php -v` reports 8.2.35, podcast-feeds smoke tests (both feeds + archive.php) return 200, and the GD extension still compiles on the new image.
+
+**Not done / follow-up:** Stayed on the 8.2 branch to avoid compatibility risk for the main site code, which lives in a separate repo and could not be tested here. PHP 8.2 reaches end of life on 2026-12-31, so a move to 8.4 should happen before then. Interim mitigation `session.upload_progress.enabled=0` was not applied because upgrading is the complete fix.
+
+**References:** https://www.php.net/ , GHSA-w8hw-w9fx-j79w, GHSA-6wmf-4rv5-p3rp

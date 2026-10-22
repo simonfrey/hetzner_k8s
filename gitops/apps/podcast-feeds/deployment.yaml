@@ -11,6 +11,9 @@ spec:
     metadata:
       labels:
         app: podcast-feeds
+      annotations:
+        # Bump when the base image changes so ArgoCD rolls the pod and re-pulls :latest
+        php-version: "8.2.35"
     spec:
       containers:
         - name: podcast-feeds

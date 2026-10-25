@@ -485,3 +485,13 @@ Also: `random_password.plausible_postgres` and `kubernetes_secret.plausible_post
 **Problem:** The first scan run was OOMKilled at the initial 1Gi limit during the nuclei phase (run 1 ended up `failed: interrupted`). The scanner only writes results when a run completes, so the Grafana dashboard stayed empty.
 
 **Fix:** `gitops/apps/eposecure/scanner.yaml`: memory request 256Mi -> 768Mi, limit 1Gi -> 2Gi. The worker node had about 1.9Gi of real memory free, and the cluster autoscaler adds nodes if requests no longer fit.
+
+## 2026-10-25: eposecure scans only simon-frey.com
+
+**Decision (Simon):** Stop scanning `proximafusion.com` entirely and only scan `simon-frey.com`.
+
+**Changes:**
+- `gitops/apps/eposecure/configmap.yaml`: removed `proximafusion.com` from the `dns` discovery `root_domains`.
+- `gitops/apps/eposecure/scanner.yaml`: added the pod template annotation `eposecure/config-revision`. The scanner reads its config only at startup, so bumping this annotation makes ArgoCD restart the pod. That aborts the scan that was running (run 3, which included proximafusion.com), and the next run uses the new config.
+
+**Note:** No scan including proximafusion.com ever completed (run 1 was OOMKilled, run 3 was aborted). The scanner writes results only at the end of a run, so no proximafusion.com data was stored in the database.

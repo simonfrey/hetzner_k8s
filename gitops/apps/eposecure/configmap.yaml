@@ -15,7 +15,6 @@ data:
       # takeover candidates for nuclei's takeover templates.
       - use: dns
         root_domains:
-          - proximafusion.com
           - simon-frey.com
         max_enumeration_minutes: 10
 

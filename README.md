@@ -285,7 +285,7 @@ terraform output -raw grafana_password
 
 ### Exposure scanner (eposecure)
 
-When monitoring is enabled, ArgoCD also deploys [eposecure](https://github.com/simonfrey/eposecure) (`gitops/apps/eposecure/`). It scans `proximafusion.com` and `simon-frey.com` every 6 hours, discovering hosts via DNS only, and stores the results in Postgres. To see the results, open the **Exposure** dashboard in the Grafana above (login required). Scanner logs:
+When monitoring is enabled, ArgoCD also deploys [eposecure](https://github.com/simonfrey/eposecure) (`gitops/apps/eposecure/`). It scans `simon-frey.com` every 6 hours, discovering hosts via DNS only, and stores the results in Postgres. To see the results, open the **Exposure** dashboard in the Grafana above (login required). Scanner logs:
 
 ```bash
 kubectl -n eposecure logs deploy/scanner -f

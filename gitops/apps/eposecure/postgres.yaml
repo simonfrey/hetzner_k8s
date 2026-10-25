@@ -1,0 +1,25 @@
+# Zalando postgres-operator generates the passwords for both users in-cluster:
+#   exposure.eposecure-postgres.credentials.postgresql.acid.zalan.do (scanner, DB owner)
+#   grafana.eposecure-postgres.credentials.postgresql.acid.zalan.do  (read-only, for Grafana)
+apiVersion: acid.zalan.do/v1
+kind: postgresql
+metadata:
+  name: eposecure-postgres
+  namespace: eposecure
+spec:
+  teamId: eposecure
+  volume:
+    size: 10Gi
+    storageClass: hcloud-volumes
+  numberOfInstances: 1
+  users:
+    exposure: []
+    grafana: []
+  databases:
+    exposure: exposure
+  postgresql:
+    version: "16"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi

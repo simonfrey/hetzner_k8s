@@ -283,6 +283,14 @@ kubectl -n monitoring port-forward svc/vmstack-grafana 3000:80
 terraform output -raw grafana_password
 ```
 
+### Exposure scanner (eposecure)
+
+When monitoring is enabled, ArgoCD also deploys [eposecure](https://github.com/simonfrey/eposecure) (`gitops/apps/eposecure/`). It scans `proximafusion.com` and `simon-frey.com` every 6 hours, discovering hosts via DNS only, and stores the results in Postgres. To see the results, open the **Exposure** dashboard in the Grafana above (login required). Scanner logs:
+
+```bash
+kubectl -n eposecure logs deploy/scanner -f
+```
+
 ## ArgoCD UI
 
 The K8s API is only reachable through the WireGuard tunnel. If wireproxy isn't running (e.g. after a reboot), start it first:

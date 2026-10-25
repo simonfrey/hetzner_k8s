@@ -1,0 +1,21 @@
+{{- if .Values.enableMonitoring }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: eposecure
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "6"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: {{ .Values.targetRevision }}
+    path: gitops/apps/eposecure
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: eposecure
+  {{- include "root-app.syncPolicy" . | nindent 2 }}
+{{- end }}

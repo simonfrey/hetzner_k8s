@@ -97,6 +97,12 @@ grafana:
       cpu: 500m
   defaultDashboardsEnabled: true
   defaultDashboardsTimezone: utc
+  # Login required for everything (e.g. eposecure scan results)
+  grafana.ini:
+    auth.anonymous:
+      enabled: false
+    users:
+      allow_sign_up: false
   ingress:
     enabled: false
 

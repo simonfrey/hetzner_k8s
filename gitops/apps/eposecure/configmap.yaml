@@ -1,0 +1,51 @@
+# Based on config.example.yaml from github.com/simonfrey/eposecure v0.5.
+# DNS-only discovery: no cloud inventories, no static targets.
+# ${VAR} references are resolved from the scanner's environment; an unset
+# variable is a fatal error, so NVD_API_KEY is set (empty) in scanner.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eposecure-config
+  namespace: eposecure
+data:
+  config.yaml: |
+    discovery:
+      # Subdomains from passive sources (incl. certificate transparency) that
+      # resolve. Names that no longer resolve but still have a CNAME are kept as
+      # takeover candidates for nuclei's takeover templates.
+      - use: dns
+        root_domains:
+          - proximafusion.com
+          - simon-frey.com
+        max_enumeration_minutes: 10
+
+    scanners:
+      - use: naabu
+        top_ports: "1000"
+        rate: 300
+      - use: httpx
+        rate_limit: 50
+        follow_host_redirects: true
+      - use: banner
+      - use: nuclei # vulnerabilities
+        severities: [medium, high, critical]
+        exclude_tags: [dos, fuzz, intrusive]
+        rate_limit: 50
+        concurrency: 10
+      - use: nuclei # exposures: admin panels, leaked files, default logins, TLS, takeovers
+        severities: [info, low, medium, high, critical]
+        tags: [panel, exposure, misconfig, default-login, takeover, ssl]
+        exclude_tags: [dos, fuzz, intrusive, headers]
+        exclude_ids: [ssl-issuer, ssl-dns-names, tls-version, wildcard-tls, mismatched-ssl-certificate]
+        takeover_candidates: true
+        rate_limit: 50
+        concurrency: 10
+      - use: cve_lookup
+        min_severity: medium
+        api_key: ${NVD_API_KEY}
+        cache_ttl_hours: 20
+      - use: exploit_intel
+
+    exclude: []
+
+    max_endpoint_drop_pct: 50

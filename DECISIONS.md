@@ -445,3 +445,37 @@ Also: `random_password.plausible_postgres` and `kubernetes_secret.plausible_post
 **Not done / follow-up:** Stayed on the 8.2 branch to avoid compatibility risk for the main site code, which lives in a separate repo and could not be tested here. PHP 8.2 reaches end of life on 2026-12-31, so a move to 8.4 should happen before then. Interim mitigation `session.upload_progress.enabled=0` was not applied because upgrading is the complete fix.
 
 **References:** https://www.php.net/ , GHSA-w8hw-w9fx-j79w, GHSA-6wmf-4rv5-p3rp
+
+## 2026-10-25: Deploy eposecure exposure scanner via GitOps
+
+**Goal:** Scan the external attack surface of `proximafusion.com` and `simon-frey.com` with [eposecure](https://github.com/simonfrey/eposecure), using its published image `ghcr.io/simonfrey/exposure-scanner:v0.5`. Results must be visible only to Simon, in a password-protected Grafana.
+
+**Requirements (from Simon):** DNS-based discovery only, a scan every 6 hours for each target, no Slack alerts. Everything must go through GitOps with zero Terraform changes.
+
+**Changes:**
+- `gitops/apps/eposecure/postgres.yaml`: Zalando `postgresql` CR `eposecure-postgres` using the existing postgres-operator.
+  - The operator generates the passwords for `exposure` (DB owner, scanner) and `grafana` (read-only) inside the cluster.
+  - No password ever touches Terraform or git.
+- `gitops/apps/eposecure/configmap.yaml`: upstream `config.example.yaml` with only the `dns` discovery module (root domains `proximafusion.com`, `simon-frey.com`).
+  - `cloudlist`, `gcp_asset_search` and `static_list` are removed.
+  - The scanners section is upstream's unchanged default: low rate, with dos/fuzz/intrusive templates excluded.
+- `gitops/apps/eposecure/scanner.yaml`: one-replica Deployment running `scanner serve` with `SCAN_INTERVAL_HOURS=6`.
+  - One run covers both domains, and Postgres advisory locks prevent overlapping runs.
+  - `NVD_API_KEY=""` is set because an unset `${VAR}` in the config is fatal.
+  - An initContainer applies the read-only grants for `grafana`, the same as upstream's `grafana-role.sh`, and retries until the DB is up.
+  - `/home/nonroot` (nuclei templates) is an emptyDir, to avoid another Hetzner volume (10 GB minimum).
+- `gitops/apps/eposecure/grafana-datasource-sync.yaml`: an ArgoCD PostSync hook Job copies the operator-generated `grafana` password into Secret `eposecure-grafana-datasource` in `monitoring`, labelled `grafana_datasource=1`.
+  - Grafana's datasource sidecar hot-reloads it, so Grafana has no startup dependency on eposecure.
+  - RBAC is limited to reading one secret and writing one secret.
+  - The datasource uid `exposure-pg` matches what the dashboard expects.
+- `gitops/apps/eposecure/grafana-dashboard.yaml`: upstream dashboard JSON (v0.5) vendored as a ConfigMap in `monitoring` with label `grafana_dashboard=1`.
+- `gitops/root-app/templates/eposecure.yaml`: Application at sync-wave 6, deployed only when `enableMonitoring` is true, because it needs the monitoring Grafana.
+- `gitops/apps/monitoring/values.yaml`: explicitly disabled anonymous access and sign-up in `grafana.ini`. Grafana still has no Ingress (port-forward only), and the admin password is `terraform output -raw grafana_password`.
+
+**Not done:** upstream's Grafana alerting / Slack provisioning (not wanted). The NVD API key is not set (it's optional; CVE lookups are just slower).
+
+**Risks / notes:**
+- Outbound port scans from Hetzner IPs may trigger abuse reports. The scan rate is kept low.
+- simon-frey.com is hosted on this cluster, so the scan may see slightly more than the internet does.
+- After each rebuild, the first scan is the new baseline, so every endpoint shows as "new" once.
+- If the datasource Secret is deleted, a manual ArgoCD sync of `eposecure` recreates it.

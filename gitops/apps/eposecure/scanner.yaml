@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scanner
+  namespace: eposecure
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: scanner
+  template:
+    metadata:
+      labels:
+        app: scanner
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # Waits for the DB and gives the grafana role read-only access to every
+        # table the scanner creates (same grants as upstream's grafana-role.sh).
+        - name: db-grants
+          image: postgres:16.15
+          command:
+            - sh
+            - -c
+            - |
+              until psql -v ON_ERROR_STOP=1 \
+                -c 'GRANT USAGE ON SCHEMA public TO grafana;' \
+                -c 'GRANT SELECT ON ALL TABLES IN SCHEMA public TO grafana;' \
+                -c 'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO grafana;'
+              do
+                echo "waiting for eposecure-postgres"; sleep 5
+              done
+          env:
+            - name: PGHOST
+              value: eposecure-postgres
+            - name: PGDATABASE
+              value: exposure
+            - name: PGUSER
+              value: exposure
+            - name: PGSSLMODE
+              value: require
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: exposure.eposecure-postgres.credentials.postgresql.acid.zalan.do
+                  key: password
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+      containers:
+        - name: scanner
+          image: ghcr.io/simonfrey/exposure-scanner:v0.5
+          args: ["serve"]
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: exposure.eposecure-postgres.credentials.postgresql.acid.zalan.do
+                  key: password
+            - name: DATABASE_URL
+              value: postgres://exposure:$(DB_PASSWORD)@eposecure-postgres:5432/exposure?sslmode=require
+            - name: CONFIG_PATH
+              value: /config/config.yaml
+            - name: SCAN_INTERVAL_HOURS
+              value: "6"
+            # Optional NVD API key; must be set because config.yaml references it.
+            - name: NVD_API_KEY
+              value: ""
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            # nuclei templates + subfinder config, re-downloaded after restarts
+            - name: home
+              mountPath: /home/nonroot
+      volumes:
+        - name: config
+          configMap:
+            name: eposecure-config
+        - name: home
+          emptyDir: {}

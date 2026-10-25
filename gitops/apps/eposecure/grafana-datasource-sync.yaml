@@ -1,0 +1,134 @@
+# Copies the operator-generated read-only "grafana" DB password into a Grafana
+# datasource Secret in the monitoring namespace. The Grafana datasource sidecar
+# watches for the grafana_datasource=1 label and hot-reloads, so Grafana does not
+# depend on eposecure at startup. The Secret is not tracked by ArgoCD, so it
+# never ends up in git and is not pruned.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: grafana-datasource-sync
+  namespace: eposecure
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: grafana-datasource-sync
+  namespace: eposecure
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["grafana.eposecure-postgres.credentials.postgresql.acid.zalan.do"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: grafana-datasource-sync
+  namespace: eposecure
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: grafana-datasource-sync
+subjects:
+  - kind: ServiceAccount
+    name: grafana-datasource-sync
+    namespace: eposecure
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: eposecure-grafana-datasource-sync
+  namespace: monitoring
+rules:
+  # create cannot be restricted by resourceNames
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["eposecure-grafana-datasource"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: eposecure-grafana-datasource-sync
+  namespace: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: eposecure-grafana-datasource-sync
+subjects:
+  - kind: ServiceAccount
+    name: grafana-datasource-sync
+    namespace: eposecure
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: grafana-datasource-sync
+  namespace: eposecure
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 6
+  activeDeadlineSeconds: 1800
+  template:
+    spec:
+      serviceAccountName: grafana-datasource-sync
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: sync
+          image: alpine/k8s:1.35.9
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              SRC=grafana.eposecure-postgres.credentials.postgresql.acid.zalan.do
+              until PW_B64=$(kubectl -n eposecure get secret "$SRC" -o jsonpath='{.data.password}') && [ -n "$PW_B64" ]; do
+                echo "waiting for secret $SRC"; sleep 5
+              done
+              PW=$(echo "$PW_B64" | base64 -d)
+              kubectl apply -f - <<EOF
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: eposecure-grafana-datasource
+                namespace: monitoring
+                labels:
+                  grafana_datasource: "1"
+              stringData:
+                eposecure-datasource.yaml: |
+                  apiVersion: 1
+                  datasources:
+                    - name: Exposure
+                      uid: exposure-pg
+                      type: grafana-postgresql-datasource
+                      url: eposecure-postgres.eposecure.svc.cluster.local:5432
+                      user: grafana
+                      editable: false
+                      jsonData:
+                        database: exposure
+                        sslmode: require
+                        postgresVersion: 1600
+                      secureJsonData:
+                        password: "$PW"
+              EOF
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi

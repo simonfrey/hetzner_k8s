@@ -85,12 +85,13 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: [ALL]
+          # nuclei peaks above 1Gi (first run was OOMKilled at 1Gi)
           resources:
             requests:
               cpu: 100m
-              memory: 256Mi
+              memory: 768Mi
             limits:
-              memory: 1Gi
+              memory: 2Gi
           volumeMounts:
             - name: config
               mountPath: /config

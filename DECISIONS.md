@@ -479,3 +479,9 @@ Also: `random_password.plausible_postgres` and `kubernetes_secret.plausible_post
 - simon-frey.com is hosted on this cluster, so the scan may see slightly more than the internet does.
 - After each rebuild, the first scan is the new baseline, so every endpoint shows as "new" once.
 - If the datasource Secret is deleted, a manual ArgoCD sync of `eposecure` recreates it.
+
+## 2026-10-25: Raise eposecure scanner memory limit to 2Gi
+
+**Problem:** The first scan run was OOMKilled at the initial 1Gi limit during the nuclei phase (run 1 ended up `failed: interrupted`). The scanner only writes results when a run completes, so the Grafana dashboard stayed empty.
+
+**Fix:** `gitops/apps/eposecure/scanner.yaml`: memory request 256Mi -> 768Mi, limit 1Gi -> 2Gi. The worker node had about 1.9Gi of real memory free, and the cluster autoscaler adds nodes if requests no longer fit.

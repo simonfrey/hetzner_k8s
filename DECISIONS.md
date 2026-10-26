@@ -495,3 +495,11 @@ Also: `random_password.plausible_postgres` and `kubernetes_secret.plausible_post
 - `gitops/apps/eposecure/scanner.yaml`: added the pod template annotation `eposecure/config-revision`. The scanner reads its config only at startup, so bumping this annotation makes ArgoCD restart the pod. That aborts the scan that was running (run 3, which included proximafusion.com), and the next run uses the new config.
 
 **Note:** No scan including proximafusion.com ever completed (run 1 was OOMKilled, run 3 was aborted). The scanner writes results only at the end of a run, so no proximafusion.com data was stored in the database.
+
+## 2026-10-26: eposecure KEV feed from CISA's GitHub mirror
+
+**Problem:** Every scan failed in its last step, so the Grafana dashboard stayed empty. Run 4 completed DNS discovery, naabu, httpx, banner, both nuclei passes and cve_lookup (28 endpoints, 31 findings), then failed with `scanner exploit_intel: kev: status 403 Forbidden`. A failed run stores nothing. From inside the cluster, `www.cisa.gov` answers 403 (it blocks the Hetzner egress IP), while the same request with the scanner's User-Agent works from a residential connection.
+
+**Fix:**
+- `gitops/apps/eposecure/configmap.yaml`: set `exploit_intel.kev_url` to `https://raw.githubusercontent.com/cisagov/kev-data/main/known_exploited_vulnerabilities.json`, CISA's official GitHub mirror with the same catalog. It returns 200 from the cluster. The EPSS API (`api.first.org`) also returns 200 from the cluster, so it is unchanged.
+- `gitops/apps/eposecure/scanner.yaml`: bumped `eposecure/config-revision` to 3. The scanner loads its config only at startup. The run in progress (run 5) would have failed the same way, so restarting it loses nothing.

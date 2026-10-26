@@ -44,6 +44,8 @@ data:
         api_key: ${NVD_API_KEY}
         cache_ttl_hours: 20
       - use: exploit_intel
+        # cisa.gov returns 403 for Hetzner IPs; use CISA's official GitHub mirror
+        kev_url: https://raw.githubusercontent.com/cisagov/kev-data/main/known_exploited_vulnerabilities.json
 
     exclude: []
 

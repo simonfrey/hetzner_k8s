@@ -517,3 +517,18 @@ Also: `random_password.plausible_postgres` and `kubernetes_secret.plausible_post
 - `gitops/apps/eposecure/grafana-dashboard.yaml`: dashboard JSON vendored again from v0.6, adding the progress panels. It still uses datasource uid `exposure-pg`.
 
 **Not changed:** the read-only `grafana` grants. The new tables and views are created by the `exposure` role, so the existing `ALTER DEFAULT PRIVILEGES` covers them.
+
+## 2026-10-26: eposecure v0.6.1, scan proximafusion.com and internal-proximafusion.com again
+
+**Decision (Simon):** Upgrade to v0.6.1, and scan `proximafusion.com` and `internal-proximafusion.com` again in addition to `simon-frey.com`. This reverses the 2026-10-25 removal of proximafusion.com.
+
+**Changes:**
+- `gitops/apps/eposecure/scanner.yaml`: image `ghcr.io/simonfrey/eposecure:v0.6.1`, `config-revision` 5.
+- `gitops/apps/eposecure/configmap.yaml`:
+  - `root_domains`: simon-frey.com, proximafusion.com, internal-proximafusion.com.
+  - `exclude`: all non-public ranges (RFC1918, CGNAT 100.64/10, loopback, link-local, 0/8, IPv6 ULA/link-local/loopback). eposecure does not filter private IPs itself, and `exclude` is checked against resolved IPs. Without this, a name in public DNS pointing at a private address (likely for an "internal" domain) would be port-scanned and nuclei-tested inside Hetzner's private network, including this cluster's nodes.
+  - out-of-band callbacks (interactsh) stay off. v0.6.1 turns them off unless `interactsh_server` is set; v0.5/v0.6 used ProjectDiscovery's public `oast.*` servers. Self-hosting interactsh needs a delegated domain and public ports 53/80/443, which is out of scope for now. Blind RCE/SSRF templates (about 500) are therefore skipped.
+
+**Risks / notes:**
+- Upstream warns that `default-login` templates POST vendor default credentials. That can trip account lockout and failed-login alerts on proximafusion systems, so the security/IT owners should know the scanner's egress IP.
+- Runs 1-5 (v0.5/v0.6) ran nuclei with the public `oast.*` callback default, against proximafusion.com (runs 1-3, aborted mid-nuclei) and simon-frey.com (runs 4-5). Payloads containing oast.* URLs were sent to those hosts. A callback only happens if a host is actually vulnerable to the template.

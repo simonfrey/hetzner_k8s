@@ -1,4 +1,4 @@
-# Based on config.example.yaml from github.com/simonfrey/eposecure v0.5.
+# Based on config.example.yaml from github.com/simonfrey/eposecure v0.6.
 # DNS-only discovery: no cloud inventories, no static targets.
 # ${VAR} references are resolved from the scanner's environment; an unset
 # variable is a fatal error, so NVD_API_KEY is set (empty) in scanner.yaml.
@@ -22,6 +22,7 @@ data:
       - use: naabu
         top_ports: "1000"
         rate: 300
+        parallel_hosts: 4 # IPs scanned at once; rate is split between them
       - use: httpx
         rate_limit: 50
         follow_host_redirects: true
@@ -31,6 +32,7 @@ data:
         exclude_tags: [dos, fuzz, intrusive]
         rate_limit: 50
         concurrency: 10
+        scan_strategy: host-spray # hosts finish one after another, so per-host progress means something
       - use: nuclei # exposures: admin panels, leaked files, default logins, TLS, takeovers
         severities: [info, low, medium, high, critical]
         tags: [panel, exposure, misconfig, default-login, takeover, ssl]
@@ -44,7 +46,8 @@ data:
         api_key: ${NVD_API_KEY}
         cache_ttl_hours: 20
       - use: exploit_intel
-        # cisa.gov returns 403 for Hetzner IPs; use CISA's official GitHub mirror
+        # cisa.gov returns 403 for Hetzner IPs. Since v0.6 the GitHub mirror is the
+        # automatic fallback; asking it directly avoids a failing request every run.
         kev_url: https://raw.githubusercontent.com/cisagov/kev-data/main/known_exploited_vulnerabilities.json
 
     exclude: []

@@ -17,7 +17,7 @@ spec:
       annotations:
         # Bump on config.yaml changes: the scanner only reads its config at
         # startup, and restarting the pod aborts a running scan.
-        eposecure/config-revision: "3"
+        eposecure/config-revision: "4"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -68,7 +68,7 @@ spec:
               memory: 64Mi
       containers:
         - name: scanner
-          image: ghcr.io/simonfrey/exposure-scanner:v0.5
+          image: ghcr.io/simonfrey/eposecure:v0.6
           args: ["serve"]
           env:
             - name: DB_PASSWORD

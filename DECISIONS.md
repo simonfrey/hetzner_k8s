@@ -503,3 +503,17 @@ Also: `random_password.plausible_postgres` and `kubernetes_secret.plausible_post
 **Fix:**
 - `gitops/apps/eposecure/configmap.yaml`: set `exploit_intel.kev_url` to `https://raw.githubusercontent.com/cisagov/kev-data/main/known_exploited_vulnerabilities.json`, CISA's official GitHub mirror with the same catalog. It returns 200 from the cluster. The EPSS API (`api.first.org`) also returns 200 from the cluster, so it is unchanged.
 - `gitops/apps/eposecure/scanner.yaml`: bumped `eposecure/config-revision` to 3. The scanner loads its config only at startup. The run in progress (run 5) would have failed the same way, so restarting it loses nothing.
+
+## 2026-10-26: Upgrade eposecure to v0.6 (new image name)
+
+**Why:** Upstream v0.6 renames the image from `ghcr.io/simonfrey/exposure-scanner` to `ghcr.io/simonfrey/eposecure`. Relevant changes in v0.6:
+- live scan progress: a `progress` log line every 30s, `runs.phase/overall_pct/eta`, and `v_scan_*` views with dashboard panels
+- data from failed runs is kept
+- a built-in KEV fallback to CISA's GitHub mirror
+
+**Changes:**
+- `gitops/apps/eposecure/scanner.yaml`: image `ghcr.io/simonfrey/eposecure:v0.6`, `config-revision` 4. Verified that the image is publicly pullable without credentials, as the cluster needs.
+- `gitops/apps/eposecure/configmap.yaml`: adopted the new upstream example options `naabu.parallel_hosts: 4` and `nuclei.scan_strategy: host-spray` (first pass), so per-host progress is meaningful. Kept `kev_url` pointing at the GitHub mirror, which avoids a guaranteed 403 from cisa.gov each run before the fallback kicks in.
+- `gitops/apps/eposecure/grafana-dashboard.yaml`: dashboard JSON vendored again from v0.6, adding the progress panels. It still uses datasource uid `exposure-pg`.
+
+**Not changed:** the read-only `grafana` grants. The new tables and views are created by the `exposure` role, so the existing `ALTER DEFAULT PRIVILEGES` covers them.

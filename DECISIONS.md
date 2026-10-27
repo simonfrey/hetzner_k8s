@@ -532,3 +532,14 @@ Also: `random_password.plausible_postgres` and `kubernetes_secret.plausible_post
 **Risks / notes:**
 - Upstream warns that `default-login` templates POST vendor default credentials. That can trip account lockout and failed-login alerts on proximafusion systems, so the security/IT owners should know the scanner's egress IP.
 - Runs 1-5 (v0.5/v0.6) ran nuclei with the public `oast.*` callback default, against proximafusion.com (runs 1-3, aborted mid-nuclei) and simon-frey.com (runs 4-5). Payloads containing oast.* URLs were sent to those hosts. A callback only happens if a host is actually vulnerable to the template.
+
+## 2026-10-27: eposecure run timeout 16h; upstream fix for oversized findings index
+
+**Problem:** After a day there was still no data in Grafana. Runs 6-8 all failed with `scanner nuclei: context deadline exceeded`, each exactly 6h after it started. eposecure aborts a run after `RUN_TIMEOUT_HOURS`, which defaults to 6. With the three domains (37 IPs, ~85 endpoints), the first nuclei pass takes ~5h (502k requests) and the second ~3h (326k requests). So every run died during the second pass. Storing the partial data of run 8 also failed: `index row size 2768 exceeds btree version 4 maximum 2704 for index "findings_key_idx"`. That is an upstream bug: the index covers the raw `matched_at`, and nuclei can report a long URL with the payload in it there. One such finding makes the whole insert fail, including for successful runs.
+
+**Fix:**
+- `gitops/apps/eposecure/scanner.yaml`: `RUN_TIMEOUT_HOURS=16`, about twice the observed ~8.5h run time. The env change restarts the pod, which aborts run 9, but run 9 would have hit the same 6h timeout anyway.
+- Upstream (simonfrey/eposecure, `internal/store/schema.sql`): drop `findings_key_idx` and index `md5(matched_at)` instead. This needs a new release (v0.6.2) and an image bump here before any run can store data.
+
+**Risks / notes:**
+- `SCAN_INTERVAL_HOURS=6` is measured from run start. With ~8.5h runs, each target is scanned about every 8.5h, not every 6h. Getting back to 6h would need higher nuclei `rate_limit`/`concurrency`, which means more traffic against the scanned hosts. Rates are unchanged for now.

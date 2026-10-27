@@ -82,6 +82,10 @@ spec:
               value: /config/config.yaml
             - name: SCAN_INTERVAL_HOURS
               value: "6"
+            # A full run takes ~8.5h (nuclei: ~5h + ~3h); the 6h default killed
+            # every run. Runs longer than the interval start back-to-back.
+            - name: RUN_TIMEOUT_HOURS
+              value: "16"
             # Optional NVD API key; must be set because config.yaml references it.
             - name: NVD_API_KEY
               value: ""

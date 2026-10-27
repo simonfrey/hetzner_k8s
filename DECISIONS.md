@@ -539,7 +539,7 @@ Also: `random_password.plausible_postgres` and `kubernetes_secret.plausible_post
 
 **Fix:**
 - `gitops/apps/eposecure/scanner.yaml`: `RUN_TIMEOUT_HOURS=16`, about twice the observed ~8.5h run time. The env change restarts the pod, which aborts run 9, but run 9 would have hit the same 6h timeout anyway.
-- Upstream (simonfrey/eposecure, `internal/store/schema.sql`): drop `findings_key_idx` and index `md5(matched_at)` instead. This needs a new release (v0.6.2) and an image bump here before any run can store data.
+- Upstream (simonfrey/eposecure v0.6.2, `internal/store/schema.sql`): drop `findings_key_idx` and index `md5(matched_at)` instead. `gitops/apps/eposecure/scanner.yaml` now uses image `ghcr.io/simonfrey/eposecure:v0.6.2`.
 
 **Risks / notes:**
 - `SCAN_INTERVAL_HOURS=6` is measured from run start. With ~8.5h runs, each target is scanned about every 8.5h, not every 6h. Getting back to 6h would need higher nuclei `rate_limit`/`concurrency`, which means more traffic against the scanned hosts. Rates are unchanged for now.

@@ -68,7 +68,7 @@ spec:
               memory: 64Mi
       containers:
         - name: scanner
-          image: ghcr.io/simonfrey/eposecure:v0.6.1
+          image: ghcr.io/simonfrey/eposecure:v0.6.2
           args: ["serve"]
           env:
             - name: DB_PASSWORD

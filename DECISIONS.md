@@ -577,3 +577,21 @@ Also: `random_password.plausible_postgres` and `kubernetes_secret.plausible_post
 **Fix:**
 - `gitops/apps/monitoring/values.yaml`: `victoria-metrics-operator.admissionWebhooks.certManager.enabled: true`. cert-manager (already installed, wave -1) now issues the webhook cert, and cainjector fills in the `caBundle`. The chart no longer renders a random CA.
 - One-off on the existing cluster: delete the broken `ValidatingWebhookConfiguration` `monitoring-victoria-metrics-operator-admission` so ArgoCD can diff again. ArgoCD recreates it from git with the cert-manager annotation. Not needed on a fresh setup.
+
+## 2026-10-28: Stateless Grafana, HSTS for the public Grafana
+
+**Problem:** After the monitoring sync was unblocked, the new Grafana pod stayed `Pending`. The Grafana PVC was a Hetzner volume in nbg1, created back when Grafana ran on the control plane. The March change that removed control-plane tolerations was only applied now. The only worker was in hel1, and Hetzner volumes only attach within one location, so the pod could not be scheduled. The autoscaler did not scale up an nbg1 worker for it either. The old pod (old config, session cookie without `Secure`) kept serving.
+
+A security check of the public endpoint also showed no HSTS header. Grafana only sends HSTS when it terminates TLS itself, and here Traefik does.
+
+**Decision (Simon):** Make Grafana stateless instead of moving the volume or putting Grafana back on the control plane.
+- `gitops/apps/monitoring/values.yaml`:
+  - `grafana.persistence.enabled: false` (emptyDir). Dashboards and datasources come from sidecars, and the admin user comes from the Terraform `grafana-admin` secret on every start. Only UI-made changes are lost on restart.
+  - ArgoCD prunes the old PVC, and the volume goes with it.
+- `gitops/apps/monitoring/values.yaml`: new Traefik `headers` middleware `monitoring-hsts` (`stsSeconds: 31536000`), placed before basic auth so even 401 responses carry HSTS.
+
+**Security check results (before this change):**
+- TLS: Let's Encrypt; TLS 1.0 and 1.1 refused; HTTP redirects to HTTPS.
+- Every path returns 401 from Traefik without basic auth, including `/api/health`, `/metrics` and `/public/`, so the version is not leaked.
+- `admin` login fails; the random admin user works.
+- Anonymous API access returns 401; signup API returns "User signup is disabled".

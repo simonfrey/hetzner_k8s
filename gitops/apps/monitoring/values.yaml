@@ -84,10 +84,11 @@ alertmanager:
 # Grafana (datasource auto-pointed to VMSingle)
 grafana:
   enabled: true
+  # Stateless: dashboards, datasources (sidecars) and the admin user (Terraform
+  # secret) are all provisioned, so nothing needs to persist. A Hetzner volume
+  # pins Grafana to one location (nbg1 vs hel1 workers) and blocked scheduling.
   persistence:
-    enabled: true
-    storageClassName: hcloud-volumes
-    size: 5Gi
+    enabled: false
   resources:
     requests:
       cpu: 50m
@@ -117,7 +118,7 @@ grafana:
     ingressClassName: traefik
     annotations:
       cert-manager.io/cluster-issuer: letsencrypt-prod
-      traefik.ingress.kubernetes.io/router.middlewares: monitoring-redirect-https@kubernetescrd,monitoring-basic-auth@kubernetescrd
+      traefik.ingress.kubernetes.io/router.middlewares: monitoring-redirect-https@kubernetescrd,monitoring-hsts@kubernetescrd,monitoring-basic-auth@kubernetescrd
     hosts:
       - grafana.tools.simon-frey.com
     path: /
@@ -202,3 +203,11 @@ extraObjects:
       basicAuth:
         secret: grafana-basic-auth
         removeHeader: true
+  - apiVersion: traefik.io/v1alpha1
+    kind: Middleware
+    metadata:
+      name: hsts
+      namespace: monitoring
+    spec:
+      headers:
+        stsSeconds: 31536000

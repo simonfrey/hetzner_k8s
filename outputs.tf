@@ -96,9 +96,27 @@ output "guacamole_password" {
   sensitive   = true
 }
 
+output "grafana_username" {
+  description = "Grafana admin username"
+  value       = "g${random_string.grafana_admin_user.result}"
+  sensitive   = true
+}
+
 output "grafana_password" {
   description = "Grafana admin password"
   value       = random_password.grafana.result
+  sensitive   = true
+}
+
+output "grafana_basic_auth_username" {
+  description = "Basic auth username in front of https://grafana.tools.simon-frey.com"
+  value       = "u${random_string.grafana_basic_auth_user.result}"
+  sensitive   = true
+}
+
+output "grafana_basic_auth_password" {
+  description = "Basic auth password in front of https://grafana.tools.simon-frey.com"
+  value       = random_password.grafana_basic_auth.result
   sensitive   = true
 }
 
@@ -158,7 +176,10 @@ output "summary" {
     Retrieve passwords:
       terraform output -raw windows_admin_password
       terraform output -raw guacamole_password
+      terraform output -raw grafana_username
       terraform output -raw grafana_password
+      terraform output -raw grafana_basic_auth_username
+      terraform output -raw grafana_basic_auth_password
       terraform output -raw browsh_password
 
     Security Notes:

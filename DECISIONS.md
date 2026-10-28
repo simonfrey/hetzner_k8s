@@ -543,3 +543,27 @@ Also: `random_password.plausible_postgres` and `kubernetes_secret.plausible_post
 
 **Risks / notes:**
 - `SCAN_INTERVAL_HOURS=6` is measured from run start. With ~8.5h runs, each target is scanned about every 8.5h, not every 6h. Getting back to 6h would need higher nuclei `rate_limit`/`concurrency`, which means more traffic against the scanned hosts. Rates are unchanged for now.
+
+## 2026-10-28: Public Grafana at grafana.tools.simon-frey.com
+
+**Goal:** Reach Grafana from a browser over the internet, protected by passwords, with an admin login that is not `admin`. Until now Grafana had no Ingress (port-forward only, see 2026-10-25).
+
+**Decisions (Simon):**
+- Two auth layers: a Traefik basicAuth in front of Grafana (same pattern as browsh), then the normal Grafana login. Scanners never see the Grafana login page or version.
+- Credentials stay in Terraform, next to the existing `grafana-admin` secret.
+- Hostname `grafana.tools.simon-frey.com`.
+
+**Changes:**
+- `argocd.tf`:
+  - `random_string.grafana_admin_user` makes the `grafana-admin` secret's `admin-user` random (`g` + 12 lowercase alphanumerics).
+  - New `grafana-basic-auth` secret in `monitoring` (random user `u` + 12 chars, random 24-char password, bcrypt). It uses `ignore_changes = [data]`, the same as browsh, so the bcrypt salt does not cause a diff on every plan.
+- `outputs.tf`: `grafana_username`, `grafana_basic_auth_username`, `grafana_basic_auth_password`.
+- `gitops/apps/monitoring/values.yaml`:
+  - `grafana.ingress` (traefik, cert-manager `letsencrypt-prod`, TLS secret `grafana-tls`), using middlewares `monitoring-redirect-https` and `monitoring-basic-auth`.
+  - The two Middlewares are created through the chart's top-level `extraObjects`.
+  - The basicAuth middleware sets `removeHeader: true`. Otherwise Grafana tries the forwarded `Authorization: Basic` header as Grafana credentials and rejects the request.
+  - `grafana.ini`: `root_url`, `cookie_secure`, `disable_gravatar`, analytics reporting and update checks off. Anonymous access and sign-up stay disabled. Grafana's built-in brute-force login lockout is on by default.
+
+**Manual steps:**
+- DNS: `*.tools.simon-frey.com` is not a wildcard. Add a Cloudflare A record `grafana.tools` pointing to the ingress LB IP (DNS-only), the same as `browsh.tools`.
+- Grafana creates its admin user only when the DB is first set up (on the PVC). A fresh setup gets the random username. On an already running cluster, the existing `admin` user must be renamed once, through the Grafana API (`PUT /api/users/1`), or the Grafana PVC must be recreated. Dashboards and datasources are provisioned by sidecars.

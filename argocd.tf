@@ -196,6 +196,25 @@ resource "random_password" "grafana" {
   special = true
 }
 
+# Random Grafana admin login (not "admin"), prefixed with a letter
+resource "random_string" "grafana_admin_user" {
+  length  = 12
+  upper   = false
+  special = false
+}
+
+# Traefik basicAuth in front of the public Grafana
+resource "random_string" "grafana_basic_auth_user" {
+  length  = 12
+  upper   = false
+  special = false
+}
+
+resource "random_password" "grafana_basic_auth" {
+  length  = 24
+  special = false
+}
+
 resource "random_password" "browsh" {
   length  = 24
   special = false
@@ -345,9 +364,9 @@ resource "kubernetes_config_map" "kwatch" {
 
   data = {
     "config.yaml" = yamlencode({
-      maxRecentLogLines              = 20
-      ignoreFailedGracefulShutdown   = true
-      ignoreContainerNames           = "image-watcher"
+      maxRecentLogLines            = 20
+      ignoreFailedGracefulShutdown = true
+      ignoreContainerNames         = "image-watcher"
       pvcMonitor = {
         enabled   = true
         interval  = 15
@@ -389,8 +408,25 @@ resource "kubernetes_secret" "grafana_admin" {
   }
 
   data = {
-    admin-user     = "admin"
+    admin-user     = "g${random_string.grafana_admin_user.result}"
     admin-password = random_password.grafana.result
+  }
+}
+
+resource "kubernetes_secret" "grafana_basic_auth" {
+  count = var.enable_monitoring ? 1 : 0
+
+  metadata {
+    name      = "grafana-basic-auth"
+    namespace = kubernetes_namespace.monitoring[0].metadata[0].name
+  }
+
+  data = {
+    users = "u${random_string.grafana_basic_auth_user.result}:${bcrypt(random_password.grafana_basic_auth.result)}"
+  }
+
+  lifecycle {
+    ignore_changes = [data]
   }
 }
 

@@ -129,6 +129,13 @@ grafana:
 
 # VM Operator
 victoria-metrics-operator:
+  # Webhook TLS via cert-manager. The chart default creates the CA with
+  # genCA + lookup. ArgoCD can't do lookup, so every render made a new CA, the
+  # webhook caBundle stopped matching the operator's cert, and every sync
+  # failed with "x509: certificate signed by unknown authority".
+  admissionWebhooks:
+    certManager:
+      enabled: true
   env:
     - name: VM_VMAGENTDEFAULT_USEDEFAULTRESOURCES
       value: "false"

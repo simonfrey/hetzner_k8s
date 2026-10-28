@@ -567,3 +567,13 @@ Also: `random_password.plausible_postgres` and `kubernetes_secret.plausible_post
 **Manual steps:**
 - DNS: `*.tools.simon-frey.com` is not a wildcard. Add a Cloudflare A record `grafana.tools` pointing to the ingress LB IP (DNS-only), the same as `browsh.tools`.
 - Grafana creates its admin user only when the DB is first set up (on the PVC). A fresh setup gets the random username. On an already running cluster, the existing `admin` user must be renamed once, through the Grafana API (`PUT /api/users/1`), or the Grafana PVC must be recreated. Dashboards and datasources are provisioned by sidecars.
+
+## 2026-10-28: monitoring app stuck since March (VM operator webhook CA), switch to cert-manager
+
+**Problem:** `https://grafana.tools.simon-frey.com` served Traefik's self-signed default cert because no Ingress existed. The `monitoring` ArgoCD app had not synced since 2026-03-09. Every diff failed with `failed calling webhook "vmalertmanagers.operator.victoriametrics.com": ... x509: certificate signed by unknown authority ... "vm-operator-ca"`. So none of the `values.yaml` changes after 2026-03-06 had been applied: the CPU limit removals, the grafana CPU bump, the eposecure `grafana.ini` settings, and the public Ingress.
+
+**Root cause:** By default, the victoria-metrics-operator chart generates the webhook CA with `genCA` and tries to reuse it via `lookup`. ArgoCD renders charts without cluster access, so `lookup` returns nothing and every render generates a new CA. The webhook's `caBundle` then no longer matched the cert the operator serves. ArgoCD's server-side diff dry-runs the VM CRs through that webhook, so the comparison itself failed.
+
+**Fix:**
+- `gitops/apps/monitoring/values.yaml`: `victoria-metrics-operator.admissionWebhooks.certManager.enabled: true`. cert-manager (already installed, wave -1) now issues the webhook cert, and cainjector fills in the `caBundle`. The chart no longer renders a random CA.
+- One-off on the existing cluster: delete the broken `ValidatingWebhookConfiguration` `monitoring-victoria-metrics-operator-admission` so ArgoCD can diff again. ArgoCD recreates it from git with the cert-manager annotation. Not needed on a fresh setup.

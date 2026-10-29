@@ -82,10 +82,11 @@ spec:
               value: /config/config.yaml
             - name: SCAN_INTERVAL_HOURS
               value: "6"
-            # A full run takes ~8.5h (nuclei: ~5h + ~3h); the 6h default killed
-            # every run. Runs longer than the interval start back-to-back.
+            # A full run took ~8.5h (nuclei: ~5h + ~3h); the 6h default killed
+            # every run. With noirdoc.de/nextaim.de (139 targets) the estimate is
+            # ~14h. Runs longer than the interval start back-to-back.
             - name: RUN_TIMEOUT_HOURS
-              value: "16"
+              value: "24"
             # Optional NVD API key; must be set because config.yaml references it.
             - name: NVD_API_KEY
               value: ""
@@ -93,13 +94,14 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: [ALL]
-          # nuclei peaks above 1Gi (first run was OOMKilled at 1Gi)
+          # nuclei peaks above 1Gi (first run was OOMKilled at 1Gi), and above
+          # 2Gi with 127+ targets (run 17 was OOMKilled at 2Gi in nuclei#2)
           resources:
             requests:
               cpu: 100m
               memory: 768Mi
             limits:
-              memory: 2Gi
+              memory: 3Gi
           volumeMounts:
             - name: config
               mountPath: /config

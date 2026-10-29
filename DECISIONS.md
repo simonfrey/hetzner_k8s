@@ -605,3 +605,9 @@ A security check of the public endpoint also showed no HSTS header. Grafana only
 **Change:** Scanner image `ghcr.io/simonfrey/eposecure:v0.6.2` → `v0.7.0`. The vendored dashboard (`gitops/apps/eposecure/grafana-dashboard.yaml`) is replaced with upstream v0.7.0 `exposure.json` without changes.
 - The overview panels now follow the provider/account filter, using the new view `v_run_scope_stats`. The scanner recreates its views on every start, and the existing `ALTER DEFAULT PRIVILEGES` grant in the `db-grants` init container gives the `grafana` role read access to the new view.
 - v0.7.0 adds an optional `related_domains` block to the `dns` discovery (crt.sh lookup for other domains on the same certs or org). It is off by default and not enabled here. The config needs no other changes.
+
+## 2026-10-29: eposecure scanner memory 3Gi, run timeout 24h
+
+**Problem:** After noirdoc.de and nextaim.de were added, neither showed up in Grafana. The dashboard only shows finished runs. Run 17, the first with the new domains (127 targets), was OOMKilled at the 2Gi limit after 10h45m. It was at 82%, in the second nuclei phase. Run 18 started over with 139 targets and estimated ~14h in total, close to the 16h `RUN_TIMEOUT_HOURS`.
+
+**Fix (`gitops/apps/eposecure/scanner.yaml`):** memory limit 2Gi → 3Gi, `RUN_TIMEOUT_HOURS` 16 → 24. The memory request stays at 768Mi. The worker node had ~1.7Gi free, and the cluster autoscaler adds a worker if needed. Applying this restarts the scanner and aborts run 18, which was at ~5% at the time.

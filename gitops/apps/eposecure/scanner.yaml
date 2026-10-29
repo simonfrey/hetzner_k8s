@@ -17,7 +17,7 @@ spec:
       annotations:
         # Bump on config.yaml changes: the scanner only reads its config at
         # startup, and restarting the pod aborts a running scan.
-        eposecure/config-revision: "5"
+        eposecure/config-revision: "6"
     spec:
       securityContext:
         runAsNonRoot: true

@@ -595,3 +595,7 @@ A security check of the public endpoint also showed no HSTS header. Grafana only
 - Every path returns 401 from Traefik without basic auth, including `/api/health`, `/metrics` and `/public/`, so the version is not leaked.
 - `admin` login fails; the random admin user works.
 - Anonymous API access returns 401; signup API returns "User signup is disabled".
+
+## 2026-10-29: eposecure scans noirdoc.de and nextaim.de
+
+**Decision (Simon):** Add `noirdoc.de` and `nextaim.de` to the eposecure DNS discovery `root_domains` (`gitops/apps/eposecure/configmap.yaml`). Their subdomains are discovered and scanned the same way as the existing domains. The scanner's `config-revision` annotation was bumped to restart the pod so it loads the new config.

@@ -18,6 +18,8 @@ data:
           - simon-frey.com
           - proximafusion.com
           - internal-proximafusion.com
+          - noirdoc.de
+          - nextaim.de
         max_enumeration_minutes: 10
 
     scanners:

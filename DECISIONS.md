@@ -599,3 +599,9 @@ A security check of the public endpoint also showed no HSTS header. Grafana only
 ## 2026-10-29: eposecure scans noirdoc.de and nextaim.de
 
 **Decision (Simon):** Add `noirdoc.de` and `nextaim.de` to the eposecure DNS discovery `root_domains` (`gitops/apps/eposecure/configmap.yaml`). Their subdomains are discovered and scanned the same way as the existing domains. The scanner's `config-revision` annotation was bumped to restart the pod so it loads the new config.
+
+## 2026-10-29: eposecure v0.7.0
+
+**Change:** Scanner image `ghcr.io/simonfrey/eposecure:v0.6.2` → `v0.7.0`. The vendored dashboard (`gitops/apps/eposecure/grafana-dashboard.yaml`) is replaced with upstream v0.7.0 `exposure.json` without changes.
+- The overview panels now follow the provider/account filter, using the new view `v_run_scope_stats`. The scanner recreates its views on every start, and the existing `ALTER DEFAULT PRIVILEGES` grant in the `db-grants` init container gives the `grafana` role read access to the new view.
+- v0.7.0 adds an optional `related_domains` block to the `dns` discovery (crt.sh lookup for other domains on the same certs or org). It is off by default and not enabled here. The config needs no other changes.

@@ -1,5 +1,16 @@
 # Decisions
 
+## 2026-11-07: Plausible event tracking 503s — ClickHouse disk full of system logs
+
+**Problem:** `POST https://p.tools.simon-frey.com/api/event` intermittently returned `503 no available server` (shown in the browser as a missing CORS header). `script.js` appeared fine only because browsers cache it for 24h. Plausible had restarted 975 times: every flush of its in-memory event/session write buffer failed with ClickHouse `NOT_ENOUGH_SPACE`, the buffer GenServer crashed, and eventually the whole app exited. While it restarted Traefik had no endpoint (503), and each crash also dropped the buffered events.
+
+**Root cause:** The 10Gi ClickHouse volume was 100% full. Plausible data was 5.7 MiB; ClickHouse's own `system.*` log tables were 7.7 GiB (`asynchronous_metric_log`, `metric_log`, `text_log`, `trace_log`, ...). The unpinned `clickhouse/clickhouse-server:latest` image (pull policy Always) upgraded several times; each log-table schema change renames the old table to `<name>_N` and never drops it.
+
+**Fix:**
+- `gitops/apps/plausible/clickhouse.yaml`: `configuration.files` adds `config.d/plausible-logs.xml` (modelled on Plausible CE's `clickhouse/logs.xml`): `query_log` kept with a 7-day TTL, all other system logs removed. Image pinned to `26.10.3.7` (the running version; data can't be downgraded) via a podTemplate with requests/limits. Reconcile-trigger bumped to 8.
+- `gitops/root-app/templates/plausible.yaml`: resource requests/limits so the ingest pod is no longer BestEffort. Still a single replica: CE keeps sessions in node memory, so multiple replicas would split sessions.
+- One-off on the live cluster: dropped the orphaned `system.*_N` tables and the now-disabled log tables to free the disk (only system tables, the `plausible` database was untouched). A fresh setup never needs this because the config is present from the start.
+
 ## 2026-05-27: Fix liveness probe killing Claude Code pod (exit code 137)
 
 **Problem:** The liveness probe used `pgrep -x sleep` but `procps` (which provides `pgrep`) was not installed in the container image. Every 30s the probe failed with "pgrep: not found", and after 3 failures Kubernetes sent SIGKILL to the container (exit code 137). This caused the pod to restart repeatedly, killing active Claude sessions.

@@ -17,6 +17,14 @@ spec:
       valuesObject:
         secret:
           existingSecret: plausible-credentials
+        # Not BestEffort: this pod is the event ingest path. Single replica on
+        # purpose, CE keeps sessions in memory per node.
+        resources:
+          requests:
+            cpu: 100m
+            memory: 512Mi
+          limits:
+            memory: 2Gi
         env:
           - name: TZ
             value: UTC

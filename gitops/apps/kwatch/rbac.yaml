@@ -1,6 +1,7 @@
 # kwatch v1.1.0 RBAC: the chart's "least-privilege" list with
 # watch.secrets=false (no Secret access). RBAC/admission/CRD/CSR kinds are
-# left out on purpose; kwatch reports them as permission_denied and skips them.
+# left out on purpose (except webhook configs, below); kwatch reports the rest
+# as permission_denied and skips them.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -49,6 +50,11 @@ rules:
     verbs: ["list", "watch"]
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
+    verbs: ["list", "watch"]
+  # Broken admission webhooks are a common failure cause; without this kwatch
+  # retries these two watches forever (log spam)
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
     verbs: ["list", "watch"]
   - apiGroups: ["authorization.k8s.io"]
     resources: ["selfsubjectaccessreviews"]

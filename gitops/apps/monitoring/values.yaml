@@ -41,45 +41,21 @@ vmalert:
       limits:
         memory: 256Mi
 
-# VMAlertmanager (routes alerts to Pushover)
+# VMAlertmanager (routes alerts to Telegram)
+# The config (routes + Telegram receiver) lives in the manually created
+# "alertmanager-config" secret: the chat ID must be inline and this repo is
+# public. Template + script: scripts/alerting/, scripts/create-alerting-secrets.sh
 alertmanager:
   enabled: true
   spec:
     selectAllByDefault: true
-    secrets:
-      - alertmanager-pushover
+    configSecret: alertmanager-config
     resources:
       requests:
         cpu: 10m
         memory: 32Mi
       limits:
         memory: 64Mi
-  config:
-    route:
-      receiver: pushover
-      group_by: ['alertname', 'namespace']
-      group_wait: 30s
-      group_interval: 5m
-      repeat_interval: 4h
-      routes:
-        - receiver: "null"
-          matchers:
-            - alertname = "Watchdog"
-        - receiver: "null"
-          matchers:
-            - alertname = "InfoInhibitor"
-        - receiver: "null"
-          matchers:
-            - alertname = "KubePdbNotEnoughHealthyPods"
-            - poddisruptionbudget =~ ".*critical-op-pdb"
-    receivers:
-      - name: "null"
-      - name: pushover
-        pushover_configs:
-          - user_key_file: /etc/vm/secrets/alertmanager-pushover/user-key
-            token_file: /etc/vm/secrets/alertmanager-pushover/api-token
-            priority: '{{ if eq .Status "firing" }}0{{ else }}-1{{ end }}'
-            title: '{{ .Status | toUpper }}: {{ .CommonLabels.alertname }}'
 
 # Grafana (datasource auto-pointed to VMSingle)
 grafana:

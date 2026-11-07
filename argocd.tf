@@ -356,33 +356,8 @@ resource "kubernetes_namespace" "kwatch" {
   depends_on = [helm_release.cilium]
 }
 
-resource "kubernetes_config_map" "kwatch" {
-  metadata {
-    name      = "kwatch"
-    namespace = kubernetes_namespace.kwatch.metadata[0].name
-  }
-
-  data = {
-    "config.yaml" = yamlencode({
-      maxRecentLogLines            = 20
-      ignoreFailedGracefulShutdown = true
-      ignoreContainerNames         = "image-watcher"
-      pvcMonitor = {
-        enabled   = true
-        interval  = 15
-        threshold = 80
-      }
-      nodeMonitor = {
-        enabled = true
-      }
-      alert = {
-        webhook = {
-          url = var.pushover_webhook_url
-        }
-      }
-    })
-  }
-}
+# kwatch config (Telegram token) is the manually created "kwatch-config"
+# secret, see scripts/create-alerting-secrets.sh
 
 # --- monitoring ---
 
@@ -427,20 +402,6 @@ resource "kubernetes_secret" "grafana_basic_auth" {
 
   lifecycle {
     ignore_changes = [data]
-  }
-}
-
-resource "kubernetes_secret" "alertmanager_pushover" {
-  count = var.enable_monitoring ? 1 : 0
-
-  metadata {
-    name      = "alertmanager-pushover"
-    namespace = kubernetes_namespace.monitoring[0].metadata[0].name
-  }
-
-  data = {
-    user-key  = var.pushover_user_key
-    api-token = var.pushover_api_token
   }
 }
 

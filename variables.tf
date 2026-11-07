@@ -259,21 +259,3 @@ variable "langy_gemini_api_key" {
   type        = string
   sensitive   = true
 }
-
-variable "pushover_webhook_url" {
-  description = "Pushover webhook URL for kwatch notifications"
-  type        = string
-  sensitive   = true
-}
-
-variable "pushover_user_key" {
-  description = "Pushover user/group key for Alertmanager notifications"
-  type        = string
-  sensitive   = true
-}
-
-variable "pushover_api_token" {
-  description = "Pushover application API token for Alertmanager notifications"
-  type        = string
-  sensitive   = true
-}

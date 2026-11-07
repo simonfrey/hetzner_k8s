@@ -1,0 +1,28 @@
+# Alertmanager config, rendered by scripts/create-alerting-secrets.sh into the
+# "alertmanager-config" secret (monitoring namespace). Kept out of gitops/
+# because the Telegram chat ID must be inline and this repo is public.
+# After editing: re-run the script (the config-reloader picks it up).
+route:
+  receiver: telegram
+  group_by: ['alertname', 'namespace']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - receiver: "null"
+      matchers:
+        - alertname = "Watchdog"
+    - receiver: "null"
+      matchers:
+        - alertname = "InfoInhibitor"
+    - receiver: "null"
+      matchers:
+        - alertname = "KubePdbNotEnoughHealthyPods"
+        - poddisruptionbudget =~ ".*critical-op-pdb"
+receivers:
+  - name: "null"
+  - name: telegram
+    telegram_configs:
+      - bot_token: "${TELEGRAM_BOT_TOKEN}"
+        chat_id: ${TELEGRAM_CHAT_ID}
+        send_resolved: true

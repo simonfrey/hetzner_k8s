@@ -60,6 +60,12 @@ info "ArgoCD applications:"
 kubectl -n argocd get applications 2>/dev/null || warn "ArgoCD applications not available yet"
 echo ""
 
+if ! kubectl -n monitoring get secret alertmanager-config >/dev/null 2>&1 \
+  || ! kubectl -n kwatch get secret kwatch-config >/dev/null 2>&1; then
+  warn "Alerting secrets missing — run: TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... ./scripts/create-alerting-secrets.sh"
+  echo ""
+fi
+
 echo "  export KUBECONFIG=$KUBECONFIG_PATH"
 echo ""
 echo "  ArgoCD UI: kubectl -n argocd port-forward svc/argocd-server 8080:80"

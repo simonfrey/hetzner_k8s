@@ -143,6 +143,20 @@ Terraform writes `.wireproxy.conf` in the project root and starts wireproxy in t
 
 This fetches the kubeconfig, rewrites the API URL for the WireGuard tunnel, waits for ArgoCD, and shows the cluster status. All workloads are deployed automatically by ArgoCD — no manual helm/kubectl commands needed.
 
+### 5b. Alerting secrets (Telegram)
+
+Alertmanager and kwatch send alerts to Telegram. The bot token and chat ID must not be in this public repo, so create the two secrets once per cluster:
+
+1. Create a bot with [@BotFather](https://t.me/BotFather) (`/newbot`) and copy the token.
+2. Send your bot any message, then read your chat ID from `https://api.telegram.org/bot<TOKEN>/getUpdates` (`message.chat.id`).
+3. Run:
+
+```bash
+TELEGRAM_BOT_TOKEN=<token> TELEGRAM_CHAT_ID=<chat id> ./scripts/create-alerting-secrets.sh
+```
+
+This renders `scripts/alerting/*.tmpl` into `monitoring/alertmanager-config` and `kwatch/kwatch-config`. Re-run it after editing the templates (e.g. Alertmanager routes). Until it has run, Alertmanager has no config and kwatch stays in `ContainerCreating`.
+
 ### 6. DNS Setup
 
 After deploy, add these records in Cloudflare (DNS-only mode, gray cloud):

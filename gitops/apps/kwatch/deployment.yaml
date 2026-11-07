@@ -32,7 +32,8 @@ spec:
               mountPath: /config/config.yaml
               subPath: config.yaml
               readOnly: true
+      # Created by scripts/create-alerting-secrets.sh (contains the Telegram token)
       volumes:
         - name: config
-          configMap:
-            name: kwatch
+          secret:
+            secretName: kwatch-config

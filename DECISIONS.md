@@ -1,5 +1,20 @@
 # Decisions
 
+## 2026-11-07: Replace Pushover with Telegram for alerting; fix kwatch crash loop
+
+**Problem:** The Plausible ClickHouse disk-full incident (below) did fire `KubePersistentVolumeFillingUp` (critical) and `KubePodCrashLooping`, and Alertmanager delivered them to Pushover without errors (496 notifications in 7 days) — but Pushover is no longer used, so nobody saw them. kwatch had crash-looped 21,655 times: its Terraform-rendered config set `ignoreContainerNames` to a string, while kwatch expects a list, so it never ran.
+
+**Decision:** Telegram bot for both Alertmanager (native `telegram_configs`) and kwatch (native `alert.telegram`). Free, no SMTP account needed. Pushover removed entirely.
+
+**Secrets:** Alertmanager's `chat_id` must be an inline integer (no `_file` variant in v0.28), and the repo is public, so the whole Alertmanager config is a manually created secret instead of chart values. The user chose a documented manual secret over Terraform variables. Routes stay versioned as a template:
+- `scripts/alerting/alertmanager.yaml.tmpl`, `scripts/alerting/kwatch-config.yaml.tmpl` — templates with `${TELEGRAM_BOT_TOKEN}`/`${TELEGRAM_CHAT_ID}`
+- `scripts/create-alerting-secrets.sh` — renders them into `monitoring/alertmanager-config` and `kwatch/kwatch-config` (one-time per cluster, README step 5b; `post-deploy.sh` warns if missing)
+
+**Changes:**
+- `gitops/apps/monitoring/values.yaml`: `alertmanager.spec.configSecret: alertmanager-config`; removed inline config and the pushover secret mount
+- `gitops/apps/kwatch/deployment.yaml`: config from secret `kwatch-config` instead of the Terraform ConfigMap; `ignoreContainerNames` is now a list
+- `argocd.tf` / `variables.tf`: removed `kubernetes_config_map.kwatch`, `kubernetes_secret.alertmanager_pushover`, and the `pushover_*` variables
+
 ## 2026-11-07: Plausible event tracking 503s — ClickHouse disk full of system logs
 
 **Problem:** `POST https://p.tools.simon-frey.com/api/event` intermittently returned `503 no available server` (shown in the browser as a missing CORS header). `script.js` appeared fine only because browsers cache it for 24h. Plausible had restarted 975 times: every flush of its in-memory event/session write buffer failed with ClickHouse `NOT_ENOUGH_SPACE`, the buffer GenServer crashed, and eventually the whole app exited. While it restarted Traefik had no endpoint (503), and each crash also dropped the buffered events.

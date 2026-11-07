@@ -4,10 +4,15 @@ metadata:
   name: kwatch
   namespace: kwatch
 spec:
-  # Single writer (Lease); Recreate so two pods never run side by side
+  # Single writer (Lease); maxSurge 0 so two pods never run side by side.
+  # (Not "Recreate": server-side apply keeps the live rollingUpdate defaults,
+  # which the API rejects together with Recreate.)
   replicas: 1
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: kwatch

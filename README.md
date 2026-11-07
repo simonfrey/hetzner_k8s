@@ -155,7 +155,7 @@ Alertmanager and kwatch send alerts to Telegram. The bot token and chat ID must 
 TELEGRAM_BOT_TOKEN=<token> TELEGRAM_CHAT_ID=<chat id> ./scripts/create-alerting-secrets.sh
 ```
 
-This renders `scripts/alerting/*.tmpl` into `monitoring/alertmanager-config` and `kwatch/kwatch-config`. Re-run it after editing the templates (e.g. Alertmanager routes). Until it has run, Alertmanager has no config and kwatch stays in `ContainerCreating`.
+This renders `scripts/alerting/alertmanager.yaml.tmpl` into `monitoring/alertmanager-config`, writes the token and chat ID to `kwatch/kwatch-telegram` (kwatch reads them via `${file:...}`) and stores both in `monitoring/telegram-credentials`. Re-run it after editing the template (e.g. Alertmanager routes); re-runs without the env vars reuse the stored values. Until it has run, Alertmanager has no config and kwatch stays in `ContainerCreating`.
 
 ### 6. DNS Setup
 

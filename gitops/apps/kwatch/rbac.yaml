@@ -1,3 +1,6 @@
+# kwatch v1.1.0 RBAC: the chart's "least-privilege" list with
+# watch.secrets=false (no Secret access). RBAC/admission/CRD/CSR kinds are
+# left out on purpose; kwatch reports them as permission_denied and skips them.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -10,14 +13,46 @@ metadata:
   name: kwatch
 rules:
   - apiGroups: [""]
-    resources: ["events", "pods", "nodes", "persistentvolumeclaims"]
+    resources: ["events", "nodes", "pods", "persistentvolumeclaims", "persistentvolumes", "configmaps", "serviceaccounts", "resourcequotas", "limitranges", "services", "replicationcontrollers"]
+    verbs: ["list", "watch"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["nodes/stats", "nodes/metrics", "pods/log"]
+    verbs: ["get"]
+  - nonResourceURLs: ["/readyz", "/metrics"]
+    verbs: ["get"]
   - apiGroups: ["apps"]
-    resources: ["deployments", "daemonsets", "statefulsets", "replicasets"]
-    verbs: ["get", "list", "watch"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets", "controllerrevisions"]
+    verbs: ["list", "watch"]
   - apiGroups: ["batch"]
-    resources: ["jobs"]
-    verbs: ["get", "list", "watch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "ingressclasses", "networkpolicies"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses", "volumeattachments"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["authorization.k8s.io"]
+    resources: ["selfsubjectaccessreviews"]
+    verbs: ["create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -27,6 +62,60 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: kwatch
+subjects:
+  - kind: ServiceAccount
+    name: kwatch
+    namespace: kwatch
+---
+# Single-writer Lease
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kwatch-leader-election
+  namespace: kwatch
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["create"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    resourceNames: ["kwatch-leader"]
+    verbs: ["get", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kwatch-leader-election
+  namespace: kwatch
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kwatch-leader-election
+subjects:
+  - kind: ServiceAccount
+    name: kwatch
+    namespace: kwatch
+---
+# Restart evidence: reads its own previous pod
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kwatch-restart-evidence
+  namespace: kwatch
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kwatch-restart-evidence
+  namespace: kwatch
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kwatch-restart-evidence
 subjects:
   - kind: ServiceAccount
     name: kwatch

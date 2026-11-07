@@ -1,5 +1,17 @@
 # Decisions
 
+## 2026-11-07: kwatch v1.1.0 and readable Telegram alerts
+
+**Problem:** kwatch v0.10.3's Telegram provider builds its JSON with `Sprintf` and no escaping (any quote/newline in pod logs makes the request invalid, so alerts are dropped) and sends Slack syntax (`:tada:`, `<url|text>`) that Telegram shows raw. Alertmanager's default Telegram message is a dense label dump.
+
+**kwatch → v1.1.0** (user's call). Notable upstream changes: license is now ELv2 (source-available, Community/Pro editions); weekly anonymous usage stats; credentials only via `${file:/path}`; Lease-based single writer; state dir (PVC upstream); upstream default RBAC is list/watch on `*/*`.
+- `gitops/apps/kwatch/configmap.yaml`: config now in git (no secrets in it). `telemetry.enabled: false`, `upgrader.disableUpdateCheck: true`, `watch.secrets: false`, `image-watcher` silenced, Telegram token/chatId from `${file:/secrets/...}`.
+- `gitops/apps/kwatch/rbac.yaml`: the chart's least-privilege list without Secrets, and without RBAC/admission/CRD/CSR kinds; plus the leader-election and restart-evidence Roles. Skipped: Pro license Role/Secret (Community, no key) and the kube-system control-plane-leases Role (Talos control plane is not a kwatch concern here).
+- `gitops/apps/kwatch/deployment.yaml`: v1.1.0 pod spec (non-root, read-only rootfs, health probes, Recreate). Data dir is an `emptyDir`, not a PVC: a Hetzner volume would pin kwatch to one location (same reason Grafana is stateless). Open incidents may be re-announced after a restart.
+- `scripts/create-alerting-secrets.sh`: kwatch now gets `kwatch/kwatch-telegram` (token, chat-id). Credentials are also stored in `monitoring/telegram-credentials`, so re-runs after template edits need no env vars.
+
+**Alertmanager message:** custom HTML `message` in `scripts/alerting/alertmanager.yaml.tmpl`: status emoji + severity + alert name, namespace/pod/PVC/node, description (or summary), runbook link; label/annotation text passed through `html` so Telegram's parser never rejects a message.
+
 ## 2026-11-07: Replace Pushover with Telegram for alerting; fix kwatch crash loop
 
 **Problem:** The Plausible ClickHouse disk-full incident (below) did fire `KubePersistentVolumeFillingUp` (critical) and `KubePodCrashLooping`, and Alertmanager delivered them to Pushover without errors (496 notifications in 7 days) — but Pushover is no longer used, so nobody saw them. kwatch had crash-looped 21,655 times: its Terraform-rendered config set `ignoreContainerNames` to a string, while kwatch expects a list, so it never ran.

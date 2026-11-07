@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kwatch
+  namespace: kwatch
+data:
+  # kwatch v1.x: credentials only via ${file:...} from the manually created
+  # "kwatch-telegram" secret (scripts/create-alerting-secrets.sh).
+  config.yaml: |
+    app:
+      clusterName: hetzner-k8s
+    # No phone-home: weekly usage stats and the GitHub update check
+    telemetry:
+      enabled: false
+    upgrader:
+      disableUpdateCheck: true
+    # RBAC grants no Secret access (gitops/apps/kwatch/rbac.yaml)
+    watch:
+      secrets: false
+    silences:
+      - containerNames: ["image-watcher"]
+    alert:
+      telegram:
+        token: "${file:/secrets/token}"
+        chatId: "${file:/secrets/chat-id}"

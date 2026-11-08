@@ -8,6 +8,8 @@ set -euo pipefail
 #   - Content-Length >= 1 MB (acast once returned 19-byte "MEDIAFILE_NOT_READY" bodies)
 #   - Content-Length matches the enclosure length="" attribute
 #   - ffprobe can decode the first MB as MP3
+#   - the audio duration is within 5% of <itunes:duration> (catches wrong or
+#     cut-short recordings)
 #
 # Prerequisites: curl, ffprobe, python3
 #
@@ -33,21 +35,25 @@ for feed in "${FEEDS[@]}"; do
     echo "=== $feed"
     curl -sSf "$feed" -o "$TMP_DIR/feed.xml"
 
-    # url<TAB>length<TAB>title, deduplicated by URL (BestOf items reuse enclosures)
+    # url<TAB>length<TAB>duration_seconds<TAB>title, deduplicated by URL (BestOf items reuse enclosures)
     python3 -I - "$TMP_DIR/feed.xml" > "$TMP_DIR/enclosures.tsv" <<'EOF'
 import sys
 import xml.etree.ElementTree as ET
+ITUNES = "{http://www.itunes.com/dtds/podcast-1.0.dtd}"
 seen = set()
 for item in ET.parse(sys.argv[1]).getroot().iter("item"):
     enc = item.find("enclosure")
     if enc is None or enc.get("url") in seen:
         continue
     seen.add(enc.get("url"))
+    seconds = 0
+    for part in (item.findtext(ITUNES + "duration") or "0").split(":"):
+        seconds = seconds * 60 + int(part)
     title = (item.findtext("title") or "").replace("\t", " ")
-    print(enc.get("url"), enc.get("length", ""), title, sep="\t")
+    print(enc.get("url"), enc.get("length", ""), seconds, title, sep="\t")
 EOF
 
-    while IFS=$'\t' read -r url length title; do
+    while IFS=$'\t' read -r -u 3 url length seconds title; do
         checked=$((checked + 1))
         problem=""
         read -r code size < <(curl -s -o /dev/null -I -w '%{http_code} %header{content-length}\n' "$url")
@@ -61,12 +67,17 @@ EOF
         elif ! curl -s -r 0-$((MIN_SIZE - 1)) "$url" -o "$TMP_DIR/head.mp3" \
             || ! ffprobe -v error -f mp3 -i "$TMP_DIR/head.mp3" -show_entries format=format_name -of csv=p=0 >/dev/null 2>&1; then
             problem="not decodable as MP3"
+        else
+            duration=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$url" </dev/null 2>/dev/null || true)
+            if ! python3 -I -c "import sys; d, e = float(sys.argv[1] or 0), int(sys.argv[2]); sys.exit(0 if e == 0 or abs(d - e) <= e * 0.05 else 1)" "$duration" "$seconds"; then
+                problem="duration ${duration:-?}s != itunes:duration ${seconds}s"
+            fi
         fi
         if [[ -n "$problem" ]]; then
             failures=$((failures + 1))
             echo "  FAIL  $problem  $url  ($title)"
         fi
-    done < "$TMP_DIR/enclosures.tsv"
+    done 3< "$TMP_DIR/enclosures.tsv"
 done
 
 echo ""

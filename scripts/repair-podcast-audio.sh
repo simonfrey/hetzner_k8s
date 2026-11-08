@@ -11,7 +11,8 @@ set -euo pipefail
 #
 # For every <item> in docker/podcast-feeds/data/*_feed.xml it:
 #   1. Checks the MinIO object (via the public URL). It is broken if it is
-#      < 1 MB or ffprobe cannot decode it.
+#      < 1 MB, ffprobe cannot decode it, or its duration is off by more than
+#      5% from <itunes:duration> (acast also served some cut-short encodes).
 #   2. Resolves the original file via <acast:episodeId>:
 #      scripts/podcast-acast-audio-files.tsv for acast-native episodes,
 #      <episode_id>.mp3 for episodes imported from Transistor.
@@ -65,14 +66,21 @@ for podcast in ("swpodcast", "startuppiraten"):
         print(podcast, show_id, object_id, episode_id, seconds, title.replace("\t", " "), sep="\t")
 EOF
 
+# Returns 0 if the duration of $1 (file or URL) is within 5% of $2 seconds
+duration_matches() {
+    local duration
+    duration=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$1" </dev/null 2>/dev/null) || return 1
+    python3 -I -c "import sys; d, e = float(sys.argv[1] or 0), int(sys.argv[2]); sys.exit(0 if e == 0 or abs(d - e) <= e * 0.05 else 1)" "$duration" "$2"
+}
+
 # Returns 0 if $1 is a decodable MP3 >= 1 MB whose duration is within 5% of $2 seconds
 valid_mp3() {
-    local file="$1" expected="$2" size duration
+    local file="$1" expected="$2" size
     size=$(stat -c %s "$file")
     (( size >= MIN_SIZE )) || return 1
+    # Audio stream only: some originals have corrupt embedded cover art
     ffmpeg -nostdin -v error -xerror -i "$file" -map 0:a -f null - 2>/dev/null || return 1
-    duration=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$file") || return 1
-    python3 -I -c "import sys; d, e = float(sys.argv[1]), int(sys.argv[2]); sys.exit(0 if e == 0 or abs(d - e) <= e * 0.05 else 1)" "$duration" "$expected"
+    duration_matches "$file" "$expected"
 }
 
 repaired=0
@@ -84,7 +92,8 @@ while IFS=$'\t' read -r -u 3 podcast show_id object_id episode_id seconds title;
     size=$(curl -s -o /dev/null -I -w '%header{content-length}' "$url")
     size=${size:-0}
     if (( size >= MIN_SIZE )) && curl -s -r 0-$((MIN_SIZE - 1)) "$url" -o "$WORK_DIR/head.mp3" \
-        && ffprobe -v error -f mp3 -i "$WORK_DIR/head.mp3" >/dev/null 2>&1; then
+        && ffprobe -v error -f mp3 -i "$WORK_DIR/head.mp3" >/dev/null 2>&1 \
+        && duration_matches "$url" "$seconds"; then
         continue
     fi
 

@@ -5,7 +5,7 @@ set -euo pipefail
 # Run this once before deploying the K8s podcast feed service.
 #
 # Prerequisites:
-#   - curl
+#   - curl, ffprobe
 #   - mc (MinIO client): https://min.io/docs/minio/linux/reference/minio-mc.html
 #   - Access to MinIO API (either via port-forward or direct)
 #
@@ -50,6 +50,13 @@ echo "Downloaded swpodcast feed: $(wc -c < "$WORK_DIR/swpodcast_feed_raw.xml") b
 echo ""
 echo "=== Step 2: Extract and download audio files ==="
 
+DOWNLOAD_FAILURES=0
+
+# A real episode is >= 1 MB and decodes as MP3
+valid_audio() {
+    (( $(wc -c < "$1") >= 1024 * 1024 )) && ffprobe -v error -f mp3 -i "$1" >/dev/null 2>&1
+}
+
 download_audio() {
     local feed_xml="$1"
     local output_dir="$2"
@@ -73,24 +80,39 @@ download_audio() {
         local filename="${episode_id}.mp3"
         local output_path="$output_dir/$filename"
 
-        if [[ -f "$output_path" ]]; then
+        if [[ -f "$output_path" ]] && valid_audio "$output_path"; then
             echo "  [$count/$total] Skipping $filename (already exists)"
             continue
         fi
 
+        # acast sometimes answers HTTP 200 with a 19-byte "MEDIAFILE_NOT_READY" body,
+        # so validate the file and retry instead of trusting the status code.
         echo "  [$count/$total] Downloading $filename..."
-        if curl -sL -o "$output_path" "$url"; then
-            local size
-            size=$(wc -c < "$output_path")
-            echo "    -> $(( size / 1024 / 1024 )) MB"
+        local attempt
+        for attempt in 1 2 3 4 5; do
+            if curl -sSfL -o "$output_path" "$url" && valid_audio "$output_path"; then
+                break
+            fi
+            rm -f "$output_path"
+            echo "    -> attempt $attempt failed, retrying in $(( attempt * 30 ))s"
+            sleep $(( attempt * 30 ))
+        done
+        if [[ -f "$output_path" ]]; then
+            echo "    -> $(( $(wc -c < "$output_path") / 1024 / 1024 )) MB"
         else
             echo "    -> FAILED to download $url"
+            DOWNLOAD_FAILURES=$((DOWNLOAD_FAILURES + 1))
         fi
     done <<< "$urls"
 }
 
 download_audio "$WORK_DIR/startuppiraten_feed_raw.xml" "$WORK_DIR/startuppiraten/audio" "Startuppiraten"
 download_audio "$WORK_DIR/swpodcast_feed_raw.xml" "$WORK_DIR/swpodcast/audio" "SWPodcast"
+
+if (( DOWNLOAD_FAILURES > 0 )); then
+    echo "$DOWNLOAD_FAILURES audio downloads failed validation. Not uploading anything." >&2
+    exit 1
+fi
 
 echo ""
 echo "=== Step 3: Extract and download image files ==="

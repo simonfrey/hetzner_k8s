@@ -58,6 +58,17 @@ data:
                 proxy_pass http://blog;
             }
 
+            # Block hotlinking of link screenshots. Checked here (not in PHP)
+            # because cached hits never reach the backend. Empty referer is
+            # allowed so direct opens and og:image crawlers keep working.
+            location ~ ^/links/(img\.php|img_hd\.php|imgs/) {
+                valid_referers none blocked server_names simon-frey.com *.simon-frey.com;
+                if ($invalid_referer) {
+                    return 403;
+                }
+                proxy_pass http://main;
+            }
+
             location / {
                 proxy_pass http://main;
             }
